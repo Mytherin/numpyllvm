@@ -1,16 +1,14 @@
 
 
 #include "parser.hpp"
-#ifdef NDEBUG
-#undef NDEBUG
-#endif
-#include <cassert>
+#include "debug_printer.hpp"
 
 static Pipeline* CreatePipeline() {
     Pipeline *pipeline = (Pipeline*) malloc(sizeof(Pipeline));
     pipeline->operation = NULL;
     pipeline->children = NULL;
     pipeline->parent = NULL;
+    pipeline->name = getname("Pipe");
     return pipeline;
 }
 

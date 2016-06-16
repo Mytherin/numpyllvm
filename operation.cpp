@@ -1,6 +1,17 @@
 
 #include "operation.hpp"
 
+ThunkOperation *ThunkOperation_FromUnary(PyObject *arg, operator_type type, void *gencode_function, char *opname) {
+    ThunkOperation *op = (ThunkOperation*) malloc(sizeof(ThunkOperation));
+    op->type = type;
+    op->gencode.type = GENTYPE_UNARY;
+    op->gencode.gencode_func = gencode_function;
+    op->gencode.parameter[0] = arg;
+    op->opname = strdup(opname);
+    Py_INCREF(arg);
+    return op;
+}
+
 ThunkOperation *ThunkOperation_FromBinary(PyObject *left, PyObject *right, operator_type type, void *gencode_function, char *opname) {
 	ThunkOperation *op = (ThunkOperation*) malloc(sizeof(ThunkOperation));
 	op->type = type;

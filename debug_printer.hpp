@@ -4,7 +4,15 @@
 
 #include "parser.hpp"
 
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+#include <cassert>
+
+
 void PrintThunk(PyThunkObject *thunk);
 void PrintPipeline(Pipeline *pipeline);
+
+char *getname(const char *base);
 
 #endif

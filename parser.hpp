@@ -75,6 +75,7 @@ struct Pipeline {
     Operation *operation;
     Pipeline *parent;
     PipelineNode *children;
+    char *name;
 };
 
 #endif /*Py_PARSER_H*/

@@ -1,16 +1,10 @@
 
 #include "thunk.hpp"
 #include "parser.hpp"
+#include "scheduler.hpp"
 
 #include <string>
 #include "debug_printer.hpp"
-
-
-int count = 0;
-static char *getname(const char *base) {
-    count++;
-    return strdup((std::string(base) + std::to_string(count)).c_str());
-}
 
 PyObject *PyThunk_FromArray(PyObject *unused, PyObject* input) {
     PyThunkObject *thunk;
@@ -63,7 +57,11 @@ PyObject* PyThunk_Evaluate(PyThunkObject *thunk) {
     Pipeline *pipeline = ParsePipeline(thunk);
     // create compilation tasks for each pipeline and schedule them for compilation
 
-    //PrintPipeline(pipeline);
+    PrintPipeline(pipeline);
+
+    SchedulePipeline(pipeline);
+
+    RunThread();
     // the scheduler will handle compiling the pipeline and executing them after compilation
     // so all we do now is block until the computation is completed and we can return the result
 	return NULL;

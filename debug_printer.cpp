@@ -6,6 +6,14 @@
 #define MAX_OPERATION_LINES 100
 #define CONSOLE_WIDTH = 800
 
+
+int count = 0;
+char *getname(const char *base) {
+    count++;
+    return strdup((std::string(base) + std::to_string(count)).c_str());
+}
+
+
 const char* GetOperationData(Operation *op) {
     switch(op->Type()) {
         case OPTYPE_nullop:
@@ -15,7 +23,7 @@ const char* GetOperationData(Operation *op) {
         case OPTYPE_binop:
             return ((BinaryOperation*)op)->operation->opname;
         case OPTYPE_pipeline:
-            return "Pipe";
+            return ((PipelineOperation*)op)->pipeline->name;
         case OPTYPE_obj:
             return ((ObjectOperation*)op)->thunk->name;
         default:
@@ -30,7 +38,7 @@ struct LocationNode {
     LocationNode *next;
 };
 
-bool AddLocationNode(Operation *op, int line, double location, LocationNode ** nodes) {
+void AddLocationNode(Operation *op, int line, double location, LocationNode ** nodes) {
     LocationNode* node = (LocationNode*) malloc(sizeof(LocationNode));
     node->op = op;
     node->location = location;
@@ -64,7 +72,7 @@ size_t GatherOperation(Operation *op, int line, double location, LocationNode **
         return max(GatherOperation(((BinaryOperation*)op)->LHS, line + 1, location - width, nodes, width / 2, size + 20),
                 GatherOperation(((BinaryOperation*)op)->RHS, line + 1, location + width, nodes, width / 2, size + 20));
     } else if (op->Type() == OPTYPE_unop) {
-        return GatherOperation(((UnaryOperation*)op)->LHS, line + 1, location, nodes, size);
+        return GatherOperation(((UnaryOperation*)op)->LHS, line + 1, location, nodes, width, size);
     }
     return size;
 }
@@ -97,6 +105,7 @@ void PrintLocationNodes(LocationNode ** nodes, ssize_t size, ssize_t width) {
                 assert(start > line.size());
                 if (start > (ssize_t)  line.size()) line += std::string(start - line.size(), ' ');
                 line += opdata;
+                start += opdata.size() / 2;
                 assert(start > nextLine.size());
                 if (start > (ssize_t) nextLine.size() + 1) nextLine += std::string(start - nextLine.size() - 1, ' ');
                 nextLine += std::string("|");
@@ -129,7 +138,19 @@ PrintPipeline(Pipeline *pipeline) {
         }
         printf("\n");
     }*/
+    if (pipeline->name) {
+        size_t pipelen = strlen(pipeline->name);
+        std::cout << std::string((size  - pipelen) / 2 - 2,' ') << std::string(pipelen + 4, '-') << std::endl;
+        std::cout << std::string((size  - pipelen) / 2 - 2,' ') << "| " << pipeline->name << " |" << std::endl;
+        std::cout << std::string((size  - pipelen) / 2 - 2,' ') << std::string(pipelen + 4, '-') << std::endl;
+    }
     PrintLocationNodes(locations, size, size / 2);
+
+    PipelineNode *node = pipeline->children;
+    while(node) {
+        PrintPipeline(node->child);
+        node = node->next;
+    }
 }
 
 

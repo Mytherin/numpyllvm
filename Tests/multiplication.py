@@ -12,7 +12,7 @@ e = jit.thunk(numpy.arange(100))
 f = jit.thunk(numpy.arange(100))
 
 
-d = (a * a * a) * (a * b * c)
+d = (a * a * a).sort() * (a * b * c)
 d.evaluate()
 
 

@@ -32,4 +32,6 @@ struct ExecuteTask {
 
 // Adds a task to the task queue
 void ScheduleTask(Task *task);
+void SchedulePipeline(Pipeline *pipeline);
+void RunThread(void);
 #endif /* Py_SCHEDULER_H */
