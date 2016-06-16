@@ -11,7 +11,7 @@ typedef unsigned char gencode_type;
 #define GENTYPE_UNARY 1
 #define GENTYPE_BINARY 2
 
-struct GenCodeInfo{
+struct GenCodeInfo {
 	gencode_type type;
 	void *gencode_func;
 	PyObject *parameter[2];

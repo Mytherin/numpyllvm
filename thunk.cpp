@@ -2,6 +2,15 @@
 #include "thunk.hpp"
 #include "parser.hpp"
 
+#include <string>
+#include "debug_printer.hpp"
+
+
+int count = 0;
+static char *getname(const char *base) {
+    count++;
+    return strdup((std::string(base) + std::to_string(count)).c_str());
+}
 
 PyObject *PyThunk_FromArray(PyObject *unused, PyObject* input) {
     PyThunkObject *thunk;
@@ -20,6 +29,7 @@ PyObject *PyThunk_FromArray(PyObject *unused, PyObject* input) {
     thunk->operation = NULL;
     thunk->cardinality =  PyArray_SIZE(thunk->storage);
     thunk->type = PyArray_TYPE(thunk->storage);
+    thunk->name = getname("A");
     return (PyObject*)thunk;
 }
 
@@ -35,6 +45,7 @@ PyObject *PyThunk_FromOperation(ThunkOperation *operation, ssize_t cardinality, 
     thunk->operation = operation;
     thunk->cardinality = cardinality;
     thunk->type = type;
+    thunk->name = getname("operation");
     return (PyObject*)thunk;
 }
 
@@ -46,8 +57,15 @@ void PyThunk_Init(void) {
 }
 
 PyObject* PyThunk_Evaluate(PyThunkObject *thunk) {
+    // parse the separate pipelines from the thunk 
+    // (i.e. split the set of operations on blocking operations so we have a set of standalone pipelines)
+    // each separate pipeline will be compiled into a single function
     Pipeline *pipeline = ParsePipeline(thunk);
-    (void) pipeline;
+    // create compilation tasks for each pipeline and schedule them for compilation
+
+    //PrintPipeline(pipeline);
+    // the scheduler will handle compiling the pipeline and executing them after compilation
+    // so all we do now is block until the computation is completed and we can return the result
 	return NULL;
 }
 

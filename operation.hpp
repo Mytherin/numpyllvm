@@ -7,9 +7,10 @@
 struct ThunkOperation {
 	operator_type type;
 	GenCodeInfo gencode;
+    char *opname;
 };
 
-ThunkOperation *ThunkOperation_FromBinary(PyObject *left, PyObject *right, operator_type type, void *gencode_function);
-
+ThunkOperation *ThunkOperation_FromBinary(PyObject *left, PyObject *right, operator_type type, void *gencode_function, char *opname);
+void ThunkOperation_Destroy(ThunkOperation *operation);
 
 #endif /*Py_OPERATION_H*/

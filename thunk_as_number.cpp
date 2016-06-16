@@ -1,5 +1,6 @@
 
 #include "thunk.hpp"
+#include "debug_printer.hpp"
 
 static
 PyObject *thunk_lazymultiply(PyObject *v, PyObject *w) {
@@ -14,8 +15,7 @@ PyObject *thunk_lazymultiply(PyObject *v, PyObject *w) {
         return NULL;
     }
     size_t cardinality = left->cardinality;
-
-    ThunkOperation *op = ThunkOperation_FromBinary((PyObject*) left, (PyObject*) right, OPTYPE_VECTORIZABLE, NULL);
+    ThunkOperation *op = ThunkOperation_FromBinary((PyObject*) left, (PyObject*) right, OPTYPE_VECTORIZABLE, NULL, "*");
     return PyThunk_FromOperation(op, cardinality, 0, left->type);
 }
 

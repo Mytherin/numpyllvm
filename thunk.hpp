@@ -18,6 +18,8 @@ struct PyThunkObject {
 	size_t cardinality;
 	// type of thunk
 	int type;
+	// name of thunk
+	char *name;
 };
 
 PyAPI_DATA(PyTypeObject) PyThunk_Type;

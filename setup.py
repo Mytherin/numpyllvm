@@ -12,9 +12,9 @@ for v in sys.argv:
         break
 
 if debug:
-    environ['CFLAGS'] = (environ['CFLAGS'] if 'CFLAGS' in environ else '') + '-Wall -O0 -g'
+    environ['CFLAGS'] = '-std=c++11 ' + (environ['CFLAGS'] if 'CFLAGS' in environ else '') + '-Wall -O0 -g'
 else:
-    environ['CFLAGS'] = (environ['CFLAGS'] if 'CFLAGS' in environ else '')
+    environ['CFLAGS'] = '-std=c++11 ' + (environ['CFLAGS'] if 'CFLAGS' in environ else '')
 
 environ['CC'] = 'g++'
 
@@ -28,7 +28,7 @@ setup(
     ext_modules=[Extension(
         name=package_name,
         include_dirs=[numpy.get_include()],
-        depends=['config.hpp', 'gencode.hpp', 'initializers.hpp', 'operation.hpp', 'thunk.hpp'],
-        sources=['jitpackage.cpp', 'operation.cpp', 'thunk.cpp', 'thunk_as_number.cpp', 'thunk_methods.cpp', 'parser.cpp']
+        depends=['config.hpp', 'gencode.hpp', 'initializers.hpp', 'operation.hpp', 'thunk.hpp', 'scheduler.hpp', 'debug_printer.hpp'],
+        sources=['jitpackage.cpp', 'operation.cpp', 'thunk.cpp', 'thunk_as_number.cpp', 'thunk_methods.cpp', 'parser.cpp', 'scheduler.cpp', 'debug_printer.cpp']
         )])
 
