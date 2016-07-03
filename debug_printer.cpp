@@ -169,3 +169,8 @@ std::string _PrintThunk(PyThunkObject *thunk, size_t recursive_depth = 0) {
 void PrintThunk(PyThunkObject *thunk) {
     std::cout << _PrintThunk(thunk) << std::endl;
 }
+
+void init_debug() {
+    import_array();
+    import_umath();
+}

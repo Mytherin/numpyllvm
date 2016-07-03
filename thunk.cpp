@@ -51,6 +51,7 @@ void PyThunk_Init(void) {
 }
 
 PyObject* PyThunk_Evaluate(PyThunkObject *thunk) {
+	if (PyThunk_IsEvaluated(thunk)) Py_RETURN_NONE;
     // parse the separate pipelines from the thunk 
     // (i.e. split the set of operations on blocking operations so we have a set of standalone pipelines)
     // each separate pipeline will be compiled into a single function
@@ -60,11 +61,13 @@ PyObject* PyThunk_Evaluate(PyThunkObject *thunk) {
     PrintPipeline(pipeline);
 
     SchedulePipeline(pipeline);
+    
+    Thread *thread = CreateThread();
 
-    RunThread();
+    RunThread(thread);
     // the scheduler will handle compiling the pipeline and executing them after compilation
     // so all we do now is block until the computation is completed and we can return the result
-	return NULL;
+	Py_RETURN_NONE;
 }
 
 bool PyThunk_IsEvaluated(PyThunkObject *thunk) {

@@ -40,7 +40,7 @@ _thunk_sort(PyThunkObject *self, PyObject *unused) {
     }
     PyThunkObject *left = (PyThunkObject*) self;
     size_t cardinality = left->cardinality;
-    ThunkOperation *op = ThunkOperation_FromUnary((PyObject*) self, OPTYPE_FULLBREAKER, NULL, "sort");
+    ThunkOperation *op = ThunkOperation_FromUnary((PyObject*) self, OPTYPE_FULLBREAKER, NULL, strdup("sort"));
     return PyThunk_FromOperation(op, cardinality, 0, left->type);
 }
 

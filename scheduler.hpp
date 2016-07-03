@@ -7,6 +7,8 @@
 
 #include "parser.hpp"
 
+class JITFunction;
+
 typedef unsigned char task_type;
 
 #define TASKTYPE_UNKNOWN 255
@@ -27,11 +29,19 @@ struct CompileTask {
 
 struct ExecuteTask {
     Task_HEAD
-    // todo
+    JITFunction *function;
+    size_t start;
+    size_t end;
 };
+
+class Thread;
 
 // Adds a task to the task queue
 void ScheduleTask(Task *task);
+void DestroyTask(Task *task);
 void SchedulePipeline(Pipeline *pipeline);
-void RunThread(void);
+void RunThread(Thread *thread);
+Thread* CreateThread();
+void DestroyThread(Thread *thread);
+
 #endif /* Py_SCHEDULER_H */

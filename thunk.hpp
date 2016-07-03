@@ -7,7 +7,7 @@
 #include "operation.hpp"
 
 struct PyThunkObject {
-	PyObject_HEAD;
+	PyObject_HEAD
 	// underlying NumPy array that stores the data
 	PyArrayObject *storage;
 	// flag that indicates whether or not the array is evaluated
