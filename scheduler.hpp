@@ -41,7 +41,5 @@ void ScheduleTask(Task *task);
 void DestroyTask(Task *task);
 void SchedulePipeline(Pipeline *pipeline);
 void RunThread(Thread *thread);
-Thread* CreateThread();
-void DestroyThread(Thread *thread);
 
 #endif /* Py_SCHEDULER_H */

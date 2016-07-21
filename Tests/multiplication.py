@@ -25,4 +25,6 @@ f = jit.thunk(f_nump)
 res = (d * e * f) * (a * b * c)
 res.evaluate()
 
+print(res)
+
 print(str(res) == str(res_nump))

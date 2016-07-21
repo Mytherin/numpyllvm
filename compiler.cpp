@@ -1,6 +1,8 @@
 
 #include "compiler.hpp"
 #include "initializers.hpp"
+#include "llvmjit.hpp"
+#include "optimizer.hpp"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ExecutionEngine/GenericValue.h"
@@ -36,58 +38,48 @@ using namespace llvm;
 
 static JITFunction* 
 CreateJITFunction(Thread *thread, Pipeline *pipeline) {
-    JITFunction *jf = (JITFunction*) malloc(sizeof(JITFunction));
+    JITFunction *jf = (JITFunction*) calloc(1, sizeof(JITFunction));
     jf->pipeline = pipeline;
-    jf->execution_engine = NULL;
-    jf->function = NULL;
-    jf->references = 0;
-    jf->size = 0;
-    jf->inputs = NULL;
-    jf->outputs = NULL;
     return jf;
 }
 
 void 
 JITFunctionDECREF(JITFunction *f) {
     // TODO: This needs to be thread safe
+    printf("DECREF JIT function.\n");
     f->references--;
     if (f->references <= 0) {
+        printf("Destroying JIT function.\n");
         assert(f->pipeline);
-        assert(f->execution_engine);
+        assert(f->function);
+        assert(f->jit);
+        assert(f->handle);
+        // this is incorrect: parent has to be scheduled, not children
+        // also, scheduling does not work currently for multiple pipelines
+        // todo: fix that
         // this pipeline has been evaluated completely, schedule all the children
-        PipelineNode *node = f->pipeline->children;
+        /*PipelineNode *node = f->pipeline->children;
         while (node) {
           SchedulePipeline(node->child);
           node = node->next;
-        }
+        }*/
         // after the function is evaluated, all output thunks have been evaluated
         for (auto it = f->pipeline->outputData->objects.begin(); it != f->pipeline->outputData->objects.end(); it++) {
             it->object->evaluated = true;
+            printf("Evaluated object at %p\n", it->object);
         }
         // cleanup
         if (f->inputs) free(f->inputs);
         if (f->outputs) free(f->outputs);
+        f->jit->removeModule(f->handle);
         DestroyPipeline(f->pipeline);
-        delete f->execution_engine;
         free(f);
     }
 }
 
 void 
 ExecuteFunction(JITFunction *f, size_t start, size_t end) {
-    size_t i;
-    size_t input_count = f->pipeline->inputData->objects.size();
-    size_t output_count = f->pipeline->outputData->objects.size();
-    std::vector<GenericValue> params(input_count + output_count + 2);
-    for(i = 0; i < input_count; i++) {
-        params[i].PointerVal = f->inputs[i];
-    }
-    for(i = 0; i < output_count; i++) {
-        params[input_count + i].PointerVal = f->outputs[i];
-    }
-    params[input_count + output_count].IntVal = APInt(64, start, true);
-    params[input_count + output_count + 1].IntVal = APInt(64, end, true);
-    f->execution_engine->runFunction(f->function, params);
+    f->function(f->outputs, f->inputs, start, end);
 }
 
 static Value*
@@ -210,31 +202,41 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
     std::string fname = std::string("PipelineFunction") + std::to_string(thread->functions++);
     size_t input_count = pipeline->inputData->objects.size();
     size_t output_count = pipeline->outputData->objects.size();
+    size_t function_arg_count = 4;
     size_t arg_count = input_count + output_count + 2;
     size_t start_addr = input_count + output_count;
     size_t end_addr = start_addr + 1;
     IRBuilder<> *builder = &thread->builder;
+    auto passmanager = CreatePassManager(module, thread->jit.get());
 
+    module->setDataLayout(thread->jit->getTargetMachine().createDataLayout());
+
+    Type *int8_tpe = Type::getInt8Ty(thread->context);
+    Type *int8ptr_tpe = PointerType::get(int8_tpe, 0);
+    Type *int8ptrptr_tpe = PointerType::get(int8ptr_tpe, 0);
     Type *int64_tpe = Type::getInt64Ty(thread->context);
-    Type *void_tpe = Type::getVoidTy(thread->context);
+
 
     // arguments of the function
-    // the arguments are (void *input_1, ..., void *input_n, void *output_1, ..., void *output_n, size_t start, size_t end);
-    // note that we don't actually use void*, we use the type of the input, but this type can vary
-    std::vector<Type*> arguments(arg_count);
+    // the arguments are (void **result, void** inputs, size_t start, size_t end);
+    // note that we don't actually use void**, we use int8**, because LLVM does not support void pointers
+    std::vector<Type*> arguments(function_arg_count);
     i = 0;
-    for(auto inputs = pipeline->inputData->objects.begin(); inputs != pipeline->inputData->objects.end(); inputs++, i++) {
+    arguments[i++] = int8ptrptr_tpe;  // void** results
+    arguments[i++] = int8ptrptr_tpe;  // void** inputs
+    arguments[i++] = int64_tpe;       // size_t start
+    arguments[i++] = int64_tpe;       // size_t end
+    assert(i == function_arg_count);
+
+    /*for(auto inputs = pipeline->inputData->objects.begin(); inputs != pipeline->inputData->objects.end(); inputs++, i++) {
         arguments[i] = PointerType::get(getLLVMType(thread->context, inputs->type), 0);
     }
     for(auto outputs = pipeline->outputData->objects.begin(); outputs != pipeline->outputData->objects.end(); outputs++, i++) {
         arguments[i] = PointerType::get(getLLVMType(thread->context, outputs->type), 0);
-    }
-    arguments[i++] = int64_tpe;    // size_t start
-    arguments[i++] = int64_tpe;    // size_t end
-    assert(i == arg_count);
+    }*/
 
     // create the LLVM function
-    FunctionType *prototype = FunctionType::get(void_tpe, arguments, false);
+    FunctionType *prototype = FunctionType::get(int64_tpe, arguments, false);
     Function *function = Function::Create(prototype, GlobalValue::ExternalLinkage, fname, module);
     function->setCallingConv(CallingConv::C);
 
@@ -263,26 +265,45 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
     builder->SetInsertPoint(loop_entry);
     {
         // allocate space for the arguments
+        auto args = function->arg_begin();
         i = 0;
-        for(auto args = function->arg_begin(); args != function->arg_end(); args++, i++) {
-            argument_addresses[i] = builder->CreateAlloca(arguments[i], nullptr, argument_names[i]);
-            builder->CreateStore(&*args, argument_addresses[i]);
-        }
-        i = 0;
-        for(auto inputs = pipeline->inputData->objects.begin(); inputs != pipeline->inputData->objects.end(); inputs++, i++) {
-            inputs->alloca_address = (void*) argument_addresses[i];
-            if (size == 0) {
-                size = inputs->size;
-            }
-            assert(size == inputs->size || inputs->size == 1);
-        }
         for(auto outputs = pipeline->outputData->objects.begin(); outputs != pipeline->outputData->objects.end(); outputs++, i++) {
+            Type *column_type = PointerType::get(getLLVMType(thread->context, outputs->type), 0);
+            Value *voidptrptr = builder->CreateGEP(int8ptr_tpe, &*args, ConstantInt::get(int64_tpe, i, true));
+            Value *voidptr = builder->CreateLoad(voidptrptr, "voidptr");
+            Value *columnptr = builder->CreatePointerCast(voidptr, column_type);
+            argument_addresses[i] = builder->CreateAlloca(column_type, nullptr, argument_names[i]);
+            builder->CreateStore(columnptr, argument_addresses[i]);
             outputs->alloca_address = (void*) argument_addresses[i];
             if (size == 0) {
                 size = outputs->size;
             }
             assert(size == outputs->size || outputs->size == 1);
         }
+        args++;
+        for(auto inputs = pipeline->inputData->objects.begin(); inputs != pipeline->inputData->objects.end(); inputs++, i++) {
+            Type *column_type = PointerType::get(getLLVMType(thread->context, inputs->type), 0);
+            Value *voidptrptr = builder->CreateGEP(int8ptr_tpe, &*args, ConstantInt::get(int64_tpe, i - output_count, true));
+            Value *voidptr = builder->CreateLoad(voidptrptr, "voidptr");
+            Value *columnptr = builder->CreatePointerCast(voidptr, column_type);
+            argument_addresses[i] = builder->CreateAlloca(column_type, nullptr, argument_names[i]);
+            builder->CreateStore(columnptr, argument_addresses[i]);
+            inputs->alloca_address = (void*) argument_addresses[i];
+            if (size == 0) {
+                size = inputs->size;
+            }
+            assert(size == inputs->size || inputs->size == 1);
+        }
+        args++;
+        argument_addresses[i] = builder->CreateAlloca(arguments[2], nullptr, argument_names[i]);
+        builder->CreateStore(&*args, argument_addresses[i]);
+        args++; i++;
+        argument_addresses[i] = builder->CreateAlloca(arguments[3], nullptr, argument_names[i]);
+        builder->CreateStore(&*args, argument_addresses[i]);
+        args++; i++;
+        assert(args == function->arg_end());
+        assert(i == arg_count);
+
         builder->CreateBr(loop_cond);
     }
 
@@ -319,24 +340,33 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
     // loop end: return; (nothing happens here because we have no return value)
     builder->SetInsertPoint(loop_end);
     {
-        builder->CreateRetVoid();
+        builder->CreateRet(ConstantInt::get(int64_tpe, 0, true));
     }
 
+#ifndef _NOTDEBUG
+    verifyFunction(*function);
+    verifyModule(*module);
+#endif
+    
+    module->dump();
+    passmanager->run(*function);
     // dump generated LLVM code
     module->dump();
-    
-    std::string msg;
-    ExecutionEngine *engine = EngineBuilder(std::move(owner)).setErrorStr(&msg).create();
-    if (!engine) {
-        std::cout << "Error: " << msg;
+
+    auto handle = thread->jit->addModule(std::move(owner));
+
+    jit_function compiled_function = (jit_function) thread->jit->findSymbol(fname).getAddress();
+    if (!compiled_function) {
+        printf("Error creating function.\n");
         return NULL;
     }
-    engine->finalizeObject();
 
     JITFunction *jf = CreateJITFunction(thread, pipeline);
     jf->size = size;
-    jf->execution_engine = engine;
-    jf->function = function;
+    jf->function = compiled_function;
+    jf->jit = thread->jit.get();
+    jf->handle = handle;
+
     assert(jf->function);
     return jf;
 }

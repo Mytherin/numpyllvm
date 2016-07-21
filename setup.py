@@ -11,12 +11,10 @@ for v in sys.argv:
         sys.argv.remove(v)
         break
 
-
-
 if debug:
-    environ['CFLAGS'] = '-std=c++11 ' + (environ['CFLAGS'] if 'CFLAGS' in environ else '') + '-Wall -O0 -g'
+    environ['CFLAGS'] = '-std=c++11 -pthread ' + (environ['CFLAGS'] if 'CFLAGS' in environ else '') + '-Wall -O0 -g'
 else:
-    environ['CFLAGS'] = '-std=c++11 ' + (environ['CFLAGS'] if 'CFLAGS' in environ else '')
+    environ['CFLAGS'] = '-std=c++11 -pthread ' + (environ['CFLAGS'] if 'CFLAGS' in environ else '')
 
 environ['CC'] = 'clang++'
 environ['CXX'] = 'clang++'
@@ -48,6 +46,6 @@ setup(
         libraries=llvm_libs,
         library_dirs=llvm_libdirs,
         define_macros=llvm_defines,
-        depends=['config.hpp', 'gencode.hpp', 'initializers.hpp', 'operation.hpp', 'thunk.hpp', 'scheduler.hpp', 'debug_printer.hpp', 'thread.hpp', 'compiler.hpp'],
-        sources=['jitpackage.cpp', 'operation.cpp', 'thunk.cpp', 'thunk_as_number.cpp', 'thunk_methods.cpp', 'parser.cpp', 'scheduler.cpp', 'debug_printer.cpp', 'compiler.cpp']
+        depends=['config.hpp', 'gencode.hpp', 'initializers.hpp', 'operation.hpp', 'thunk.hpp', 'scheduler.hpp', 'debug_printer.hpp', 'thread.hpp', 'compiler.hpp', 'llvmjit.hpp', 'optimizer.hpp'],
+        sources=['jitpackage.cpp', 'operation.cpp', 'thunk.cpp', 'thunk_as_number.cpp', 'thunk_methods.cpp', 'parser.cpp', 'scheduler.cpp', 'debug_printer.cpp', 'compiler.cpp', 'thread.cpp', 'llvmjit.cpp', 'optimizer.cpp']
         )])

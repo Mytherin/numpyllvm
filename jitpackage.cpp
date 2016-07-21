@@ -20,13 +20,15 @@ PyMODINIT_FUNC initjit(void)
     initialize_operation();
     initialize_thunk_as_number();
     initialize_parser();
-    initialize_scheduler();
     initialize_compiler();
+    initialize_scheduler();
 
     //initialize module
     PyObject *m = Py_InitModule3("jit", module_methods, module_docstring);
     if (m == NULL)
         return;
+
+   	create_threads();
 }
 
 void unused_function() {

@@ -7,25 +7,6 @@
 
 moodycamel::BlockingConcurrentQueue<Task*> queue;
 bool running = true;
-static ssize_t thread_index = 0;
-
-Thread::Thread(void) : context(), builder(context) {
-    index = thread_index++;
-    functions = 0;
-}
-
-Thread* CreateThread() {
-    return new Thread();
-}
-
-void DestroyThread(Thread *thread) {
-    delete thread;
-}
-
-void 
-ScheduleTask(Task *task) {
-    queue.enqueue(task);
-}
 
 void
 SchedulePipeline(Pipeline *pipeline) {
@@ -70,12 +51,19 @@ DestroyTask(Task *task) {
     free(task);
 }
 
+void 
+ScheduleTask(Task *task) {
+    queue.enqueue(task);
+}
+
 void
 RunThread(Thread *thread) {
     while (running) {
         Task *task;
-        if (!queue.try_dequeue(task)) return;
-        //queue.wait_dequeue(task);
+        printf("Thread %zu waiting for task.\n", thread->index);
+        //if (!queue.try_dequeue(task)) return;
+        queue.wait_dequeue(task);
+        printf("Thread %zu obtained task.\n", thread->index);
         if (task == NULL) {
             printf("Null.\n");
             continue;
@@ -88,11 +76,14 @@ RunThread(Thread *thread) {
                 JITFunction *jf = CompilePipeline(((CompileTask*) task)->pipeline, thread);
                 if (jf != NULL) {
                     ScheduleFunction(jf);
+                } else {
+                    return;
                 }
                 break;
             }
             case TASKTYPE_EXECUTE:
             {
+                printf("Execute pipeline task.\n");
                 ExecuteTask *ex = (ExecuteTask*) task;
                 ExecuteFunction(ex->function, ex->start, ex->end);
                 JITFunctionDECREF(ex->function);
@@ -109,4 +100,10 @@ void
 initialize_scheduler(void) {
     import_array();
     import_umath();
+}
+
+void 
+create_threads(void) {
+    //launch threads
+    Thread *thread = CreateThread();
 }

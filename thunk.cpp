@@ -61,12 +61,21 @@ PyObject* PyThunk_Evaluate(PyThunkObject *thunk) {
     PrintPipeline(pipeline);
 
     SchedulePipeline(pipeline);
-    
+    /*
     Thread *thread = CreateThread();
 
-    RunThread(thread);
+    RunThread(thread);*/
     // the scheduler will handle compiling the pipeline and executing them after compilation
     // so all we do now is block until the computation is completed and we can return the result
+    // todo: change to semaphore
+    printf("Waiting for object at %p\n", pipeline->outputData->objects[0].object);
+    while(!pipeline->outputData->objects[0].object->evaluated) {
+        sleep(1);
+        //printf("Waiting for object at %p\n", pipeline->outputData->objects[0].object);
+    }
+
+    printf("Finished waiting for object at %p\n", pipeline->outputData->objects[0].object);
+
 	Py_RETURN_NONE;
 }
 
