@@ -10,13 +10,25 @@ PyObject *thunk_lazymultiply(PyObject *v, PyObject *w) {
     }
     PyThunkObject *left = (PyThunkObject*) v;
     PyThunkObject *right = (PyThunkObject*) w;
-    if (left->cardinality != right->cardinality) {
+    if (left->cardinality > 0 && right->cardinality > 0 && 
+        left->cardinality == cardinality_exact && right->cardinality == cardinality_exact && 
+        left->cardinality != right->cardinality) {
         PyErr_SetString(PyExc_TypeError, "Incompatible cardinality.");
         return NULL;
     }
-    size_t cardinality = left->cardinality;
-    ThunkOperation *op = ThunkOperation_FromBinary((PyObject*) left, (PyObject*) right, OPTYPE_VECTORIZABLE, NULL, strdup("*"));
-    return PyThunk_FromOperation(op, cardinality, 0, left->type);
+    ThunkOperation *op = ThunkOperation_FromBinary(
+        (PyObject*) left, 
+        (PyObject*) right, 
+        optype_vectorizable, 
+        (void*) 1 /* placeholder */, 
+        NULL, 
+        strdup("*"));
+    
+    return PyThunk_FromOperation(op, 
+        default_binary_cardinality_function, 
+        cardinality_exact, 
+        left->type /* todo: correct type */
+        );
 }
 
 

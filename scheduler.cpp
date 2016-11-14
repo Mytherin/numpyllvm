@@ -8,37 +8,85 @@
 moodycamel::BlockingConcurrentQueue<Task*> queue;
 bool running = true;
 
+static void ScheduleFunction(JITFunction *jf);
+
 void
-SchedulePipeline(Pipeline *pipeline) {
-    CompileTask* task = (CompileTask*) malloc(sizeof(CompileTask));
-    task->type = TASKTYPE_COMPILE;
+ScheduleCompilation(Pipeline *pipeline) {
+    PipelineNode *node = pipeline->children;
+    while(node) {
+        ScheduleCompilation(node->child);
+        node = node->next;
+    }
+    CompileTask* task = (CompileTask*) calloc(1, sizeof(CompileTask));
+    task->type = tasktype_compile;
     task->pipeline = pipeline;
     ScheduleTask((Task*) task);
 }
 
+void
+ScheduleExecution(Pipeline *pipeline) {
+    PipelineNode *node = pipeline->children;
+    bool all_evaluated = true;
+    // schedule a pipeline for execution
+    semaphore_wait(&pipeline->lock);
+    // check if the pipeline has already been scheduled
+    if (pipeline->scheduled_for_execution) {
+        printf("Failed to schedule pipeline %s - Already Scheduled\n", pipeline->name);
+        goto unlock;
+    }
+    // if not, check if all children have been evaluated
+    while(node) {
+        if (!node->child->evaluated) {
+            all_evaluated = false;
+            break;
+        }
+        node = node->next;
+    }
+    if (!all_evaluated) {
+        printf("Failed to schedule pipeline %s - Children Not Evaluated\n", pipeline->name);
+        goto unlock;
+    }
+
+    // if all children have to be evaluated, check if the function has been compiled
+    if (!pipeline->function) {
+        printf("Failed to schedule pipeline %s - Not Compiled\n", pipeline->name);
+        goto unlock;
+    }
+    pipeline->scheduled_for_execution = true;
+    ScheduleFunction(pipeline->function);
+unlock:
+    semaphore_increment(&pipeline->lock);
+}
+
 static void
 ScheduleFunction(JITFunction *jf) {
-    // create inputs/outputs for the function
-    jf->inputs = (void**) malloc(sizeof(void*) * jf->pipeline->inputData->objects.size());
-    jf->outputs = (void**) malloc(sizeof(void*) * jf->pipeline->outputData->objects.size());
-    // set inputs
-    size_t i = 0;
-    for(auto it = jf->pipeline->inputData->objects.begin(); it != jf->pipeline->inputData->objects.end(); it++, i++) {
-        jf->inputs[i] = it->data;
-    }
-    i = 0;
-    // allocate space for the results (if the space has not yet been allocated) and setup outputs
-    for (auto it = jf->pipeline->outputData->objects.begin(); it != jf->pipeline->outputData->objects.end(); it++) {
-        if (it->object->storage == NULL) {
-            npy_intp elements[] = { (npy_intp) it->size };
-            // todo: set to PyArray_EMPTY
-            it->object->storage = (PyArrayObject*) PyArray_ZEROS(1, elements, it->type, 0);
-            it->data = PyArray_DATA(it->object->storage);
+    if (jf->function) {
+        // compilable function
+        // create inputs/outputs for the function
+        jf->inputs = (void**) calloc(1, sizeof(void*) * jf->pipeline->inputData->objects.size());
+        jf->outputs = (void**) calloc(1, sizeof(void*) * jf->pipeline->outputData->objects.size());
+        // set inputs
+        size_t i = 0;
+        for(auto it = jf->pipeline->inputData->objects.begin(); it != jf->pipeline->inputData->objects.end(); it++, i++) {
+            jf->inputs[i] = it->source->data;
         }
-        jf->outputs[i] = it->data;
+        i = 0;
+        // allocate space for the results (if the space has not yet been allocated) and setup outputs
+        for (auto it = jf->pipeline->outputData->objects.begin(); it != jf->pipeline->outputData->objects.end(); it++, i++) {
+            if (it->source->object->storage == NULL) {
+                npy_intp elements[] = { (npy_intp) it->source->size };
+                // todo: set to PyArray_EMPTY
+                it->source->object->storage = (PyArrayObject*) PyArray_ZEROS(1, elements, it->source->type, 0);
+                it->source->data = PyArray_DATA(it->source->object->storage);
+            }
+            jf->outputs[i] = it->source->data;
+        }
+    } else {
+        // base function
+        assert(jf->base);
     }
     ExecuteTask *task = (ExecuteTask*) malloc(sizeof(ExecuteTask));
-    task->type = TASKTYPE_EXECUTE;
+    task->type = tasktype_execute;
     task->start = 0;
     task->end = jf->size;
     task->function = jf;
@@ -70,19 +118,39 @@ RunThread(Thread *thread) {
         }
         //execute task
         switch(task->type) {
-            case TASKTYPE_COMPILE:
-            {
-                printf("Compile pipeline %s\n", ((CompileTask*)task)->pipeline->name);
-                JITFunction *jf = CompilePipeline(((CompileTask*) task)->pipeline, thread);
-                if (jf != NULL) {
-                    ScheduleFunction(jf);
+            case tasktype_compile: {
+                Pipeline *pipeline = ((CompileTask*)task)->pipeline;
+                printf("Compile pipeline %s\n", pipeline->name);
+                if (CompilableOperation(pipeline->operation)) {
+                    JITFunction *jf = CompilePipeline(pipeline, thread);
+                    ((CompileTask*) task)->pipeline->function = jf;
+                    if (jf != NULL) {
+                        ScheduleExecution(pipeline);
+                    } else {
+                        printf("Failed to compile function, free semaphore\n");
+                        // free the lock so the error can be reported
+                        while(pipeline) {
+                            printf("Semaphore %p\n", pipeline);
+                            if (pipeline->semaphore) {
+                                printf("Free semaphore.\n");
+                                semaphore_increment(&pipeline->semaphore);
+                            }
+                            pipeline = pipeline->parent;
+                        }
+                    }
                 } else {
-                    return;
+                    printf("Perform base operation for function.\n");
+                    JITFunction *jf = GenerateBaseFunction(pipeline, thread);
+                    ((CompileTask*) task)->pipeline->function = jf;
+                    if (jf != NULL) {
+                        ScheduleExecution(pipeline);
+                    } else {
+                        printf("Failed to schedule function\n");
+                    }
                 }
                 break;
             }
-            case TASKTYPE_EXECUTE:
-            {
+            case tasktype_execute: {
                 printf("Execute pipeline task.\n");
                 ExecuteTask *ex = (ExecuteTask*) task;
                 ExecuteFunction(ex->function, ex->start, ex->end);

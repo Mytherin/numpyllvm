@@ -3,7 +3,6 @@
 #include "initializers.hpp"
 
 
-
 static PyObject *
 _thunk_evaluate(PyThunkObject *self, PyObject *args) {
     (void) args;
@@ -31,6 +30,13 @@ _thunk_asarray(PyThunkObject *self, PyObject *args) {
     return arr;
 }
 
+static PyArrayObject* 
+_thunk_inline_sort(PyArrayObject* input) {
+    PyArrayObject *output = (PyArrayObject*) PyArray_FromArray(input, PyArray_DESCR(input), NPY_ARRAY_ENSURECOPY);
+    PyArray_Sort(output, 0, NPY_QUICKSORT);
+    return output;
+}
+
 static PyObject *
 _thunk_sort(PyThunkObject *self, PyObject *unused) {
     (void) unused;
@@ -39,9 +45,16 @@ _thunk_sort(PyThunkObject *self, PyObject *unused) {
         return NULL;
     }
     PyThunkObject *left = (PyThunkObject*) self;
-    size_t cardinality = left->cardinality;
-    ThunkOperation *op = ThunkOperation_FromUnary((PyObject*) self, OPTYPE_FULLBREAKER, NULL, strdup("sort"));
-    return PyThunk_FromOperation(op, cardinality, 0, left->type);
+    ThunkOperation *op = ThunkOperation_FromUnary(
+        (PyObject*) self, 
+        optype_fullbreaker, 
+        NULL, 
+        (base_function_unary) _thunk_inline_sort, 
+        strdup("sort"));
+    return PyThunk_FromOperation(op, 
+        default_cardinality_function, 
+        cardinality_exact, 
+        left->type);
 }
 
 struct PyMethodDef thunk_methods[] = {

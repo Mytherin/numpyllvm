@@ -20,7 +20,7 @@ LLVMJIT::LLVMJIT()
 
 ModuleHandleT 
 LLVMJIT::addModule(std::unique_ptr<Module> module) {
-	 // We need a memory manager to allocate memory and resolve symbols for this
+	// We need a memory manager to allocate memory and resolve symbols for this
     // new module. Create one that resolves symbols by looking back into the
     // JIT.
     auto resolver = createLambdaResolver(

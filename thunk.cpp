@@ -6,6 +6,19 @@
 #include <string>
 #include "debug_printer.hpp"
 
+ssize_t 
+default_cardinality_function(ssize_t *inputs) {
+    return inputs[0];
+}
+
+ssize_t 
+default_binary_cardinality_function(ssize_t *inputs) {
+    if (inputs[0] != inputs[1]) {
+        return -1;
+    }
+    return inputs[0];
+}
+
 PyObject *PyThunk_FromArray(PyObject *unused, PyObject* input) {
     PyThunkObject *thunk;
     (void) unused;
@@ -22,14 +35,16 @@ PyObject *PyThunk_FromArray(PyObject *unused, PyObject* input) {
     thunk->evaluated = true;
     thunk->operation = NULL;
     thunk->cardinality =  PyArray_SIZE(thunk->storage);
+    thunk->cardinality_type = cardinality_exact;
+    thunk->cardinality_function = NULL;
     thunk->type = PyArray_TYPE(thunk->storage);
     thunk->name = getname("A");
     return (PyObject*)thunk;
 }
 
-PyObject *PyThunk_FromOperation(ThunkOperation *operation, ssize_t cardinality, int cardinality_type, int type) {
+PyObject*
+PyThunk_FromOperation(ThunkOperation *operation, cardinality_function cardinality_func, cardinality_type cardinality_tpe, int type) {
     PyThunkObject *thunk;
-    (void) cardinality_type;
     thunk = (PyThunkObject *)PyObject_MALLOC(sizeof(PyThunkObject));
     if (thunk == NULL)
         return PyErr_NoMemory();
@@ -37,7 +52,9 @@ PyObject *PyThunk_FromOperation(ThunkOperation *operation, ssize_t cardinality, 
     thunk->storage = NULL;;
     thunk->evaluated = false;
     thunk->operation = operation;
-    thunk->cardinality = cardinality;
+    thunk->cardinality = -1;
+    thunk->cardinality_type = cardinality_tpe;
+    thunk->cardinality_function = cardinality_func;
     thunk->type = type;
     thunk->name = getname("operation");
     return (PyObject*)thunk;
@@ -56,26 +73,21 @@ PyObject* PyThunk_Evaluate(PyThunkObject *thunk) {
     // (i.e. split the set of operations on blocking operations so we have a set of standalone pipelines)
     // each separate pipeline will be compiled into a single function
     Pipeline *pipeline = ParsePipeline(thunk);
-    // create compilation tasks for each pipeline and schedule them for compilation
+    
+    // initialize the semaphore of this pipeline, as we have to wait for its completion
+    semaphore_init(&pipeline->semaphore, 0);
 
     PrintPipeline(pipeline);
+    // schedule the pipeline for compilation
+    ScheduleCompilation(pipeline);
 
-    SchedulePipeline(pipeline);
-    /*
-    Thread *thread = CreateThread();
-
-    RunThread(thread);*/
-    // the scheduler will handle compiling the pipeline and executing them after compilation
-    // so all we do now is block until the computation is completed and we can return the result
-    // todo: change to semaphore
-    printf("Waiting for object at %p\n", pipeline->outputData->objects[0].object);
-    while(!pipeline->outputData->objects[0].object->evaluated) {
-        sleep(1);
-        //printf("Waiting for object at %p\n", pipeline->outputData->objects[0].object);
+    printf("Waiting for object at %p (Pipeline %p)\n", pipeline->outputData->objects[0].source->object, pipeline);
+    semaphore_wait(&pipeline->semaphore);
+    printf("Finished waiting for object at %p\n", pipeline->outputData->objects[0].source->object);
+    if (!thunk->evaluated) {
+        PyErr_SetString(PyExc_ValueError, "Something went wrong evaluating a Thunk.");
+        return NULL;
     }
-
-    printf("Finished waiting for object at %p\n", pipeline->outputData->objects[0].object);
-
 	Py_RETURN_NONE;
 }
 

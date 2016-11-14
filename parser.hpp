@@ -4,10 +4,12 @@
 
 #include "gencode.hpp"
 #include "thunk.hpp"
+#include "mutex.hpp"
 #include <vector>
 
 class Pipeline;
 class PipelineNode;
+class JITFunction;
 
 enum operation_type {
     OPTYPE_nullop = 0, 
@@ -32,8 +34,9 @@ public:
      *   d.evaluate()
      * In this scenario the two result_objects will be "c" and "d"; with "d" being the final result_object
      * Unnecessary intermediates (e.g. [a * a] or [b * b] in this scenario) will have NULL as result_object*/
-    PyThunkObject *result_object; 
-    Operation(PyThunkObject *result) : result_object(result) { }
+    PyThunkObject *result_object;
+    bool materialize;
+    Operation(PyThunkObject *result) : result_object(result), materialize(false) { }
     ~Operation() {}
     virtual operation_type Type() { return OPTYPE_unknown; }
 };
@@ -85,16 +88,23 @@ public:
 Pipeline *ParsePipeline(PyThunkObject *thunk);
 void DestroyPipeline(Pipeline *pipeline);
 
-class DataElement {
+class DataSource {
 public:
     PyThunkObject *object;
-    Operation *operation;
     void *data;
     size_t size;
     int type;
+
+    DataSource(PyThunkObject *object, void *data, size_t size, int type) : object(object), data(data), size(size), type(type) { }
+};
+
+class DataElement {
+public:
+    Operation *operation;
+    DataSource *source;
     void *alloca_address;
 
-    DataElement(PyThunkObject *object, Operation *op, void *data, size_t size, int type) : object(object), operation(op), data(data), size(size), type(type) { }
+    DataElement(Operation *op, DataSource *source) : operation(op), source(source) { }
 };
 
 class DataBlock {
@@ -108,7 +118,6 @@ class PipelineNode {
 public:
     Pipeline *child;
     PipelineNode *next;
-    bool evaluated;
 };
 
 class Pipeline {
@@ -119,7 +128,11 @@ public:
     DataBlock *inputData;
     DataBlock *outputData;
     char *name;
-    size_t size;
+    bool evaluated;
+    JITFunction *function;
+    bool scheduled_for_execution;
+    semaphore_struct semaphore;
+    semaphore_struct lock;
 };
 
 #endif /*Py_PARSER_H*/

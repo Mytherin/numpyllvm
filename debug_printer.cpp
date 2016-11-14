@@ -8,13 +8,15 @@
 
 
 int count = 0;
-char *getname(const char *base) {
+char*
+getname(const char *base) {
     count++;
     return strdup((std::string(base) + std::to_string(count)).c_str());
 }
 
 
-const char* GetOperationData(Operation *op) {
+const char* 
+GetOperationData(Operation *op) {
     switch(op->Type()) {
         case OPTYPE_nullop:
             return ((NullaryOperation*)op)->operation->opname;
@@ -38,7 +40,8 @@ struct LocationNode {
     LocationNode *next;
 };
 
-void AddLocationNode(Operation *op, int line, double location, LocationNode ** nodes) {
+void 
+AddLocationNode(Operation *op, int line, double location, LocationNode ** nodes) {
     LocationNode* node = (LocationNode*) malloc(sizeof(LocationNode));
     node->op = op;
     node->location = location;
@@ -62,11 +65,13 @@ void AddLocationNode(Operation *op, int line, double location, LocationNode ** n
     }
 }
 
-size_t max(size_t a, size_t b) {
+size_t 
+max(size_t a, size_t b) {
     return (a > b) ? a : b;
 }
 
-size_t GatherOperation(Operation *op, int line, double location, LocationNode ** nodes, double width = 0.25, size_t size = 20) {
+size_t 
+GatherOperation(Operation *op, int line, double location, LocationNode ** nodes, double width = 0.25, size_t size = 20) {
     AddLocationNode(op, line, location, nodes);
     if (op->Type() == OPTYPE_binop) {
         return max(GatherOperation(((BinaryOperation*)op)->LHS, line + 1, location - width, nodes, width / 2, size + 20),
@@ -77,7 +82,8 @@ size_t GatherOperation(Operation *op, int line, double location, LocationNode **
     return size;
 }
 
-void PrintLocationNodes(LocationNode ** nodes, ssize_t size, ssize_t width) {
+void 
+PrintLocationNodes(LocationNode ** nodes, ssize_t size, ssize_t width) {
     for(int i = 0; i < MAX_OPERATION_LINES; i++) {
         bool binary = false;
         LocationNode *current = nodes[i];
@@ -166,11 +172,13 @@ std::string _PrintThunk(PyThunkObject *thunk, size_t recursive_depth = 0) {
 
 }
 
-void PrintThunk(PyThunkObject *thunk) {
+void 
+PrintThunk(PyThunkObject *thunk) {
     std::cout << _PrintThunk(thunk) << std::endl;
 }
 
-void init_debug() {
+void 
+init_debug() {
     import_array();
     import_umath();
 }

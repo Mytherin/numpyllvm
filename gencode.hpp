@@ -4,26 +4,34 @@
 
 #include "config.hpp"
 
-typedef unsigned char gencode_type;
+typedef void* (*base_function)();
+typedef PyArrayObject* (*base_function_nullary)(void);
+typedef PyArrayObject* (*base_function_unary)(PyArrayObject*);
+typedef PyArrayObject* (*base_function_binary)(PyArrayObject*,PyArrayObject*);
 
-#define GENTYPE_UNKNOWN 255
-#define GENTYPE_NOARGS 0
-#define GENTYPE_UNARY 1
-#define GENTYPE_BINARY 2
+typedef enum {
+	gentype_unknown = 255,
+	gentype_noargs = 0,
+	gentype_unary = 1,
+	gentype_binary = 2
+} gencode_type;
 
 struct GenCodeInfo {
 	gencode_type type;
-	void *gencode_func;
+	void *gencode;               /* the function called to generate the LLVM code for this operation */
+	void *base;                  /* the base NumPy function to call (for when there is no gencode or for when compiling is too expensive) */
 	PyObject *parameter[2];
 };
 
-typedef unsigned char operator_type;
-
-#define OPTYPE_UNKNOWN 0
-#define OPTYPE_VECTORIZABLE 1
-#define OPTYPE_FULLBREAKER 2
-#define OPTYPE_PARALLELBREAKER 3
-#define OPTYPE_CONSTANT 4
-#define OPTYPE_NPYARRAY 5
+typedef enum {
+	optype_unknown,              /* unknown, should not be used */
+	optype_vectorizable,         /* vectorizable: executed within a loop statement */
+	optype_fullbreaker,          /* full pipeline breaker: everything is materialized
+									and an external (e.g. Numpy) function is called on the materialized array */
+	optype_parallelbreaker,      /* parallel breaker: breaks pipelines,
+	                                but this function is still computed within the LLVM JIT (no external function)*/
+	optype_constant,             /* constant numeric value */
+	optype_npyarray              /* materialized numpy array */
+} operator_type;
 
 #endif /*Py_GENCODE_H*/

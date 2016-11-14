@@ -22,9 +22,13 @@ d = jit.thunk(d_nump)
 e = jit.thunk(e_nump)
 f = jit.thunk(f_nump)
 
-res = (d * e * f) * (a * b * c)
-res.evaluate()
+
+res = (d * e * f)
+res2 = res.sort() * (a * b * c)
+res2.evaluate()
 
 print(res)
+print(res2)
 
-print(str(res) == str(res_nump))
+print(str(res) == str(d_nump * e_nump * f_nump))
+print(str(res2) == str(numpy.sort(d_nump * e_nump * f_nump) * (a_nump * b_nump * c_nump)))

@@ -9,11 +9,11 @@
 
 class JITFunction;
 
-typedef unsigned char task_type;
-
-#define TASKTYPE_UNKNOWN 255
-#define TASKTYPE_COMPILE 0
-#define TASKTYPE_EXECUTE 1
+typedef enum {
+	tasktype_unknown = 255,
+	tasktype_compile = 0,
+	tasktype_execute = 1
+} task_type;
 
 #define Task_HEAD \
     task_type type;
@@ -36,10 +36,20 @@ struct ExecuteTask {
 
 class Thread;
 
+// Schedule the compilation of a pipeline; this recursively schedules compilation of all children as well
+// This should only be called once on a Pipeline
+void ScheduleCompilation(Pipeline *pipeline);
+// Schedule a pipeline for execution; this function is called when 
+//   (1) a function finishes compiling and 
+//   (2) when children of a function finish executing
+// the function checks if the pipeline is ready for execution (compiled and all children have finished)
+// the pipeline will only be scheduled if all these conditions are met
+void ScheduleExecution(Pipeline *pipeline);
+
+
 // Adds a task to the task queue
 void ScheduleTask(Task *task);
 void DestroyTask(Task *task);
-void SchedulePipeline(Pipeline *pipeline);
 void RunThread(Thread *thread);
 
 #endif /* Py_SCHEDULER_H */

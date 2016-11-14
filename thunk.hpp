@@ -6,6 +6,17 @@
 
 #include "operation.hpp"
 
+typedef ssize_t (*cardinality_function)(ssize_t *inputs);
+
+ssize_t default_cardinality_function(ssize_t *inputs);
+ssize_t default_binary_cardinality_function(ssize_t *inputs);
+
+typedef enum {
+	cardinality_unknown = 255,
+	cardinality_exact = 1,
+	cardinality_upper_bound = 2
+} cardinality_type;
+
 struct PyThunkObject {
 	PyObject_HEAD
 	// underlying NumPy array that stores the data
@@ -15,7 +26,11 @@ struct PyThunkObject {
 	// the operation that defines how to compute this array
 	ThunkOperation *operation;
 	// cardinality of thunk
-	size_t cardinality;
+	ssize_t cardinality;
+	// cardinality type of the thunk
+	cardinality_type cardinality_type;
+	// function to compute cardinality of function, if cardinality_type is 'cardinality_unknown'
+	cardinality_function cardinality_function;
 	// type of thunk
 	int type;
 	// name of thunk
@@ -28,7 +43,7 @@ PyAPI_DATA(PyTypeObject) PyThunk_Type;
 #define PyThunk_CheckExact(op) ((op)->ob_type == &PyThunk_Type)
 
 PyObject *PyThunk_FromArray(PyObject *, PyObject*);
-PyObject *PyThunk_FromOperation(ThunkOperation *operation, ssize_t cardinality, int cardinality_type, int type);
+PyObject *PyThunk_FromOperation(ThunkOperation *operation, cardinality_function cardinality_func, cardinality_type cardinality_tpe, int type);
 
 void PyThunk_Init(void);
 

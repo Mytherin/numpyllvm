@@ -24,6 +24,10 @@
 
 typedef long long (*jit_function)(void** inputs, void **outputs, long long start, long long end); 
 
+typedef llvm::Value (*gencode_nullary_function)(llvm::IRBuilder<>& builder, llvm::LLVMContext& context);
+typedef llvm::Value (*gencode_unary_function)(llvm::IRBuilder<>& builder, llvm::LLVMContext& context, llvm::Value *inp);
+typedef llvm::Value (*gencode_binary_function)(llvm::IRBuilder<>& builder, llvm::LLVMContext& context, llvm::Value *left, llvm::Value *right);
+
 class Thread {
 public:
     // thread index
@@ -52,6 +56,7 @@ public:
     ssize_t references;
     ssize_t size;
     jit_function function;
+    base_function base;
 };
 
 Thread* CreateThread();

@@ -49,29 +49,28 @@ JITFunctionDECREF(JITFunction *f) {
     printf("DECREF JIT function.\n");
     f->references--;
     if (f->references <= 0) {
-        printf("Destroying JIT function.\n");
+        printf("Successfully executed pipeline: %s\n", f->pipeline->name);
+        printf("Destroying JIT function (%p).\n", f->pipeline);
         assert(f->pipeline);
-        assert(f->function);
-        assert(f->jit);
-        assert(f->handle);
-        // this is incorrect: parent has to be scheduled, not children
-        // also, scheduling does not work currently for multiple pipelines
-        // todo: fix that
-        // this pipeline has been evaluated completely, schedule all the children
-        /*PipelineNode *node = f->pipeline->children;
-        while (node) {
-          SchedulePipeline(node->child);
-          node = node->next;
-        }*/
         // after the function is evaluated, all output thunks have been evaluated
+        f->pipeline->evaluated = true;
         for (auto it = f->pipeline->outputData->objects.begin(); it != f->pipeline->outputData->objects.end(); it++) {
-            it->object->evaluated = true;
-            printf("Evaluated object at %p\n", it->object);
+            it->source->object->evaluated = true;
+            printf("Evaluated object at %p\n", it->source->object);
         }
+        // if anyone was waiting for the pipeline to be evaluated, notify them
+        if (f->pipeline->semaphore) {
+            semaphore_increment(&f->pipeline->semaphore);
+        }
+        if (f->pipeline->parent) {
+            // now schedule the parent of this pipeline, if it has any
+            ScheduleExecution(f->pipeline->parent);
+        }
+
         // cleanup
         if (f->inputs) free(f->inputs);
         if (f->outputs) free(f->outputs);
-        f->jit->removeModule(f->handle);
+        if (f->jit) f->jit->removeModule(f->handle);
         DestroyPipeline(f->pipeline);
         free(f);
     }
@@ -79,35 +78,89 @@ JITFunctionDECREF(JITFunction *f) {
 
 void 
 ExecuteFunction(JITFunction *f, size_t start, size_t end) {
-    f->function(f->outputs, f->inputs, start, end);
+    if (f->function) {
+        printf("--%s Inputs--\n[", f->pipeline->name);
+        for(int i = 0; i < f->pipeline->inputData->objects.size(); i++) {
+            printf("%p ", f->inputs[i]);
+        }
+        printf("]\n");
+        printf("--%s Outputs--\n[", f->pipeline->name);
+        for(int i = 0; i < f->pipeline->outputData->objects.size(); i++) {
+            printf("%p ", f->outputs[i]);
+        }
+        printf("]\n");
+        // compilable function
+        f->function(f->outputs, f->inputs, start, end);
+        printf("--%s Output--\n[", f->pipeline->name);
+        for(int i = start; i < end; i++) {
+            printf("%lld ", (long long)((npy_int64*) f->outputs[0])[i]);
+        }
+        printf("]\n");
+    } else {
+        PyArrayObject *result = NULL;
+        printf("Execute pipeline %s\n", f->pipeline->name);
+        assert(f->base);
+        switch(f->pipeline->inputData->objects.size()) {
+            case 0:
+                result = ((base_function_nullary) f->base)();
+                break;
+            case 1: {
+                DataElement *element = &f->pipeline->children->child->outputData->objects[0];
+                printf("--%s Inputs--\n[ %p ]\n", f->pipeline->name, element->source->data);
+                result = ((base_function_unary) f->base)(element->source->object->storage);
+                break;
+            }
+            case 2: {
+                DataElement *a1 = &f->pipeline->children->child->outputData->objects[0];                
+                DataElement *a2 = &f->pipeline->children->child->outputData->objects[1];
+                result = ((base_function_binary) f->base)(a1->source->object->storage, a2->source->object->storage);
+                break;
+            }
+            default:
+                fprintf(stderr, "Expected 0, 1 or 2 parameters.\n");
+                assert(0);
+                return;
+        }
+        assert(result);
+        f->pipeline->outputData->objects[0].source->object->storage = result;
+        f->pipeline->outputData->objects[0].source->size = PyArray_SIZE(result);
+        f->pipeline->outputData->objects[0].source->data = PyArray_DATA(result);
+        f->pipeline->outputData->objects[0].source->type = PyArray_TYPE(result);
+        printf("--%s Outputs--\n[ %p ]\n", f->pipeline->name, PyArray_DATA(result));
+        printf("--%s Output--\n[", f->pipeline->name);
+        for(int i = start; i < PyArray_SIZE(result); i++) {
+            printf("%lld ", (long long)((npy_int64*) PyArray_DATA(result))[i]);
+        }
+        printf("]\n");
+    }
 }
 
 static Value*
 getLLVMConstant(LLVMContext& context, DataElement *entry, Type *type) {
-    switch(entry->type) {
+    switch(entry->source->type) {
         case NPY_BOOL:
         case NPY_INT8:
-            return ConstantInt::get(type, *(char*) entry->data, true);
+            return ConstantInt::get(type, *(char*) entry->source->data, true);
         case NPY_INT16:
-            return ConstantInt::get(type, *(short*) entry->data, true);
+            return ConstantInt::get(type, *(short*) entry->source->data, true);
         case NPY_INT32:
-            return ConstantInt::get(type, *(int*) entry->data, true);
+            return ConstantInt::get(type, *(int*) entry->source->data, true);
         case NPY_INT64:
-            return ConstantInt::get(type, *(long long*) entry->data, true);
+            return ConstantInt::get(type, *(long long*) entry->source->data, true);
         case NPY_UINT8:
-            return ConstantInt::get(type, *(unsigned char*) entry->data, false);
+            return ConstantInt::get(type, *(unsigned char*) entry->source->data, false);
         case NPY_UINT16:
-            return ConstantInt::get(type, *(unsigned short*) entry->data, false);
+            return ConstantInt::get(type, *(unsigned short*) entry->source->data, false);
         case NPY_UINT32:
-            return ConstantInt::get(type, *(unsigned int*) entry->data, false);
+            return ConstantInt::get(type, *(unsigned int*) entry->source->data, false);
         case NPY_UINT64:
-            return ConstantInt::get(type, *(unsigned long long*) entry->data, false);
+            return ConstantInt::get(type, *(unsigned long long*) entry->source->data, false);
         case NPY_FLOAT16:
             return NULL; //todo
         case NPY_FLOAT32:
-            return ConstantFP::get(type, *(float*) entry->data);
+            return ConstantFP::get(type, *(float*) entry->source->data);
         case NPY_FLOAT64:
-            return ConstantFP::get(type, *(double*) entry->data);
+            return ConstantFP::get(type, *(double*) entry->source->data);
     }
     // non-numeric type, not supported
     return NULL;
@@ -141,15 +194,15 @@ getLLVMType(LLVMContext& context, int numpy_type) {
     return NULL;
 }
 
-static 
-Value *PerformOperation(IRBuilder<>& builder, LLVMContext& context, Operation *op, Value *index, DataBlock *inputData, DataBlock *outputData) {
+static Value*
+PerformOperation(IRBuilder<>& builder, LLVMContext& context, Operation *op, Value *index, DataBlock *inputData, DataBlock *outputData) {
     Value *v = NULL;
     if (op->Type() == OPTYPE_obj || op->Type() == OPTYPE_pipeline) {
         bool found = false;
         for(auto it = inputData->objects.begin(); it != inputData->objects.end(); it++) {
             if (it->operation == op) {
-                Type *column_type = getLLVMType(context, it->type);
-                if (it->size == 1) {
+                Type *column_type = getLLVMType(context, it->source->type);
+                if (it->source->size == 1) {
                     v = getLLVMConstant(context, &*it, column_type);
                 } else {
                     AllocaInst *address = (AllocaInst*) it->alloca_address;
@@ -162,13 +215,17 @@ Value *PerformOperation(IRBuilder<>& builder, LLVMContext& context, Operation *o
             }
         }
         if (!found) {
-            printf("Column/Pipeline operation found, but not found in inputData");
+            printf("Column/Pipeline operation found, but not found in inputData.\n");
             return NULL;
         }
     } else if (op->Type() == OPTYPE_binop) {
         BinaryOperation *binop = (BinaryOperation*) op;
         Value *l = PerformOperation(builder, context, binop->LHS, index, inputData, outputData);
         Value *r = PerformOperation(builder, context, binop->RHS, index, inputData, outputData);
+        if (l == NULL || r == NULL) {
+            return NULL;
+        }
+        assert(binop->operation->gencode.gencode);
         v = builder.CreateMul(l, r);
     } else if (op->Type() == OPTYPE_unop) {
         v = NULL;
@@ -176,21 +233,59 @@ Value *PerformOperation(IRBuilder<>& builder, LLVMContext& context, Operation *o
         printf("Unrecognized operation!");
         return NULL;
     }
-    if (op->result_object != NULL) {
+    if (op->materialize) {
         for(auto it = outputData->objects.begin(); it != outputData->objects.end(); it++) {
             if (it->operation == op) {
-                Type *column_type = getLLVMType(context, it->type);
+                Type *column_type = getLLVMType(context, it->source->type);
                 AllocaInst *address = (AllocaInst*) it->alloca_address;
-                LoadInst *result_address = builder.CreateLoad(address);
+                LoadInst *result_address = builder.CreateLoad(address, "blablablabla");
                 Value *resptr = builder.CreateGEP(column_type, result_address, index, "result[i]");
                 builder.CreateStore(v, resptr, "result[i] = value");
                 return v;
             }
         }
-        printf("Result object specified, but not found in outputData");
+        printf("Result of operation has to be materialized, but not found in outputData");
         return NULL;
     }
     return v;
+}
+
+bool
+CompilableOperation(Operation *operation) {
+    switch(operation->Type()) {
+        case OPTYPE_nullop:
+            return ((NullaryOperation*)operation)->operation->gencode.gencode != NULL;
+        case OPTYPE_unop:
+            return ((UnaryOperation*)operation)->operation->gencode.gencode != NULL;
+        case OPTYPE_binop:
+            return ((BinaryOperation*)operation)->operation->gencode.gencode != NULL;
+        default:
+            return true;
+    }
+}
+
+JITFunction*
+GenerateBaseFunction(Pipeline *pipeline, Thread *thread) {
+    JITFunction *jf = CreateJITFunction(thread, pipeline);
+    Operation *operation = pipeline->operation;
+    jf->size = 0;
+    jf->function = NULL;
+    jf->jit = NULL;
+
+    switch(operation->Type()) {
+        case OPTYPE_nullop:
+            jf->base = (base_function) ((NullaryOperation*)operation)->operation->gencode.base;
+            break;
+        case OPTYPE_unop:
+            jf->base = (base_function) ((UnaryOperation*)operation)->operation->gencode.base;
+            break;
+        case OPTYPE_binop:
+            jf->base = (base_function) ((BinaryOperation*)operation)->operation->gencode.base;
+            break;
+        default:
+            return NULL;
+    }
+    return jf;
 }
 
 JITFunction* 
@@ -268,7 +363,7 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
         auto args = function->arg_begin();
         i = 0;
         for(auto outputs = pipeline->outputData->objects.begin(); outputs != pipeline->outputData->objects.end(); outputs++, i++) {
-            Type *column_type = PointerType::get(getLLVMType(thread->context, outputs->type), 0);
+            Type *column_type = PointerType::get(getLLVMType(thread->context, outputs->source->type), 0);
             Value *voidptrptr = builder->CreateGEP(int8ptr_tpe, &*args, ConstantInt::get(int64_tpe, i, true));
             Value *voidptr = builder->CreateLoad(voidptrptr, "voidptr");
             Value *columnptr = builder->CreatePointerCast(voidptr, column_type);
@@ -276,13 +371,14 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
             builder->CreateStore(columnptr, argument_addresses[i]);
             outputs->alloca_address = (void*) argument_addresses[i];
             if (size == 0) {
-                size = outputs->size;
+                assert(outputs->source->size >= 0);
+                size = outputs->source->size;
             }
-            assert(size == outputs->size || outputs->size == 1);
+            assert(size == outputs->source->size || outputs->source->size == 1);
         }
         args++;
         for(auto inputs = pipeline->inputData->objects.begin(); inputs != pipeline->inputData->objects.end(); inputs++, i++) {
-            Type *column_type = PointerType::get(getLLVMType(thread->context, inputs->type), 0);
+            Type *column_type = PointerType::get(getLLVMType(thread->context, inputs->source->type), 0);
             Value *voidptrptr = builder->CreateGEP(int8ptr_tpe, &*args, ConstantInt::get(int64_tpe, i - output_count, true));
             Value *voidptr = builder->CreateLoad(voidptrptr, "voidptr");
             Value *columnptr = builder->CreatePointerCast(voidptr, column_type);
@@ -290,9 +386,10 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
             builder->CreateStore(columnptr, argument_addresses[i]);
             inputs->alloca_address = (void*) argument_addresses[i];
             if (size == 0) {
-                size = inputs->size;
+                assert(inputs->source->size >= 0);
+                size = inputs->source->size;
             }
-            assert(size == inputs->size || inputs->size == 1);
+            assert(size == inputs->source->size || inputs->source->size == 1);
         }
         args++;
         argument_addresses[i] = builder->CreateAlloca(arguments[2], nullptr, argument_names[i]);
@@ -322,7 +419,12 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
          LoadInst *index = builder->CreateLoad(argument_addresses[start_addr], "index");
         // perform the computation over the given index
         // we don't use the return value because the final assignment has already taken place
-        (void) PerformOperation(thread->builder, thread->context, pipeline->operation, index, pipeline->inputData, pipeline->outputData);
+        Value *v = PerformOperation(thread->builder, thread->context, pipeline->operation, index, pipeline->inputData, pipeline->outputData);
+        if (v == NULL) {
+            // failed to perform operation
+            printf("Failed to compile pipeline %s\n", pipeline->name);
+            return NULL;
+        }
 
         builder->CreateBr(loop_inc);
     }
@@ -347,11 +449,12 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
     verifyFunction(*function);
     verifyModule(*module);
 #endif
-    
-    module->dump();
+
+    //printf("LLVM for pipeline %s\n", pipeline->name);
+    //module->dump();
     passmanager->run(*function);
     // dump generated LLVM code
-    module->dump();
+    //module->dump();
 
     auto handle = thread->jit->addModule(std::move(owner));
 
@@ -371,7 +474,8 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
     return jf;
 }
 
-void initialize_compiler(void) {
+void 
+initialize_compiler(void) {
     InitializeNativeTarget();
     InitializeNativeTargetAsmPrinter();
     InitializeNativeTargetAsmParser();
