@@ -29,7 +29,7 @@ struct PyThunkObject {
 	ssize_t cardinality;
 	// cardinality type of the thunk
 	cardinality_type cardinality_type;
-	// function to compute cardinality of function, if cardinality_type is 'cardinality_unknown'
+	// function to compute cardinality of function given a set of inputs
 	cardinality_function cardinality_function;
 	// type of thunk
 	int type;
@@ -51,7 +51,10 @@ PyObject* PyThunk_Evaluate(PyThunkObject *thunk);
 bool PyThunk_IsEvaluated(PyThunkObject *thunk);
 PyObject *PyThunk_AsArray(PyObject*);
 
+extern PyObject* PyThunk_LazyRichCompare(PyThunkObject *self, PyObject *other, int cmp_op);
 extern PyNumberMethods thunk_as_number;
+extern PySequenceMethods thunk_as_sequence;
+extern PyMappingMethods thunk_as_mapping;
 extern struct PyMethodDef thunk_methods[];
 
 #endif /*Py_THUNK_H*/

@@ -19,9 +19,11 @@ PyMODINIT_FUNC initjit(void)
     initialize_thunk_methods();
     initialize_operation();
     initialize_thunk_as_number();
+    initialize_thunk_as_sequence();
     initialize_parser();
     initialize_compiler();
     initialize_scheduler();
+    initialize_thunk_as_mapping();
 
     //initialize module
     PyObject *m = Py_InitModule3("jit", module_methods, module_docstring);

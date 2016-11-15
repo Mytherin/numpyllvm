@@ -2,8 +2,77 @@
 #include "thunk.hpp"
 #include "debug_printer.hpp"
 
-static
-PyObject *thunk_lazymultiply(PyObject *v, PyObject *w) {
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ExecutionEngine/GenericValue.h"
+#include "llvm/ExecutionEngine/Interpreter.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/Support/ManagedStatic.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/raw_os_ostream.h"
+
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/CallingConv.h>
+#include <llvm/IR/Constants.h>
+#include <llvm/IR/DerivedTypes.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/GlobalVariable.h>
+#include <llvm/IR/InlineAsm.h>
+#include <llvm/IR/Instructions.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/Support/FormattedStream.h>
+#include <llvm/Support/MathExtras.h>
+
+using namespace llvm;
+
+Value *llvm_generate_gt(IRBuilder<>& builder, Value *l, Value *r) {
+    return builder.CreateICmpSGT(l, r);
+}
+
+PyObject*
+PyThunk_LazyRichCompare(PyThunkObject *self, PyObject *other, int cmp_op) {
+    PyThunkObject *other_thunk = (PyThunkObject*) other;
+    if (!PyThunk_CheckExact(self)) {
+        PyErr_SetString(PyExc_ValueError, "Expected a thunk object.");
+        return NULL;
+    }
+    if (cmp_op != Py_GE) {
+        // FIXME
+        PyErr_SetString(PyExc_ValueError, "Only >= supported currently.");
+        return NULL;
+    }
+    if (!PyThunk_CheckExact(other)) {
+        other_thunk = (PyThunkObject*) PyThunk_FromArray(NULL, PyArray_FromAny(other, NULL, 0, 0, 0, NULL));
+    }
+
+    ThunkOperation *op = ThunkOperation_FromBinary(
+        (PyObject*) self, 
+        (PyObject*) other_thunk, 
+        optype_vectorizable, 
+        (void*) llvm_generate_gt, 
+        NULL, 
+        strdup(">="));
+
+    return PyThunk_FromOperation(op, 
+        default_binary_cardinality_function, 
+        cardinality_exact, 
+        NPY_BOOL /* returns a boolean array */
+        );
+}
+
+Value *llvm_generate_multiply(IRBuilder<>& builder, Value *l, Value *r) {
+    return builder.CreateMul(l, r);
+}
+
+static PyObject*
+thunk_lazymultiply(PyObject *v, PyObject *w) {
     if (!PyThunk_CheckExact(v) || !PyThunk_CheckExact(w)) {
         PyErr_SetString(PyExc_TypeError, "Expected two thunk objects as parameters.");
         return NULL;
@@ -20,10 +89,10 @@ PyObject *thunk_lazymultiply(PyObject *v, PyObject *w) {
         (PyObject*) left, 
         (PyObject*) right, 
         optype_vectorizable, 
-        (void*) 1 /* placeholder */, 
+        (void*) llvm_generate_multiply, 
         NULL, 
         strdup("*"));
-    
+
     return PyThunk_FromOperation(op, 
         default_binary_cardinality_function, 
         cardinality_exact, 

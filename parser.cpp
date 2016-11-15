@@ -143,10 +143,10 @@ ParseOperationRecursive(PyThunkObject *thunk, Pipeline *current, DataSource *out
                 output_source->object = thunk;
                 output_source->data = NULL;
                 output_source->size = thunk->cardinality;
-                output_source->type = NPY_INT64;
+                output_source->type = thunk->type;
                 Py_INCREF(thunk);
             } else {
-                output_source = new DataSource(thunk, NULL, thunk->cardinality, NPY_INT64);
+                output_source = new DataSource(thunk, NULL, thunk->cardinality, thunk->type);
                 Py_INCREF(thunk);
             }
             // if the current operation has a result_object, the result of this operation must be stored

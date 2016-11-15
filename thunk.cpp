@@ -13,13 +13,18 @@ default_cardinality_function(ssize_t *inputs) {
 
 ssize_t 
 default_binary_cardinality_function(ssize_t *inputs) {
+    // if any of the two inputs is a constant, the other size is used
+    if (inputs[0] == 1) return inputs[1];
+    if (inputs[1] == 1) return inputs[0];
+    // if neither are constants and the size doesn't match we throw an error
     if (inputs[0] != inputs[1]) {
         return -1;
     }
     return inputs[0];
 }
 
-PyObject *PyThunk_FromArray(PyObject *unused, PyObject* input) {
+PyObject*
+PyThunk_FromArray(PyObject *unused, PyObject* input) {
     PyThunkObject *thunk;
     (void) unused;
     input = PyArray_FromAny(input, NULL, 0, 0, NPY_ARRAY_ENSURECOPY, NULL);
@@ -67,7 +72,8 @@ void PyThunk_Init(void) {
         return;
 }
 
-PyObject* PyThunk_Evaluate(PyThunkObject *thunk) {
+PyObject*
+PyThunk_Evaluate(PyThunkObject *thunk) {
 	if (PyThunk_IsEvaluated(thunk)) Py_RETURN_NONE;
     // parse the separate pipelines from the thunk 
     // (i.e. split the set of operations on blocking operations so we have a set of standalone pipelines)
@@ -130,8 +136,8 @@ PyTypeObject PyThunk_Type = {
     0,                                          /* tp_compare */
     (reprfunc)0,                   /* tp_repr */
     &thunk_as_number,                       /* tp_as_number */
-    0,                                          /* tp_as_sequence */
-    0,                                          /* tp_as_mapping */
+    &thunk_as_sequence,                                          /* tp_as_sequence */
+    &thunk_as_mapping,                                          /* tp_as_mapping */
     (hashfunc)PyObject_HashNotImplemented,      /* tp_hash */
     0,                                          /* tp_call */
     (reprfunc)thunk_str,                    /* tp_str */
@@ -147,7 +153,7 @@ PyTypeObject PyThunk_Type = {
     "Thunk.",                        /* tp_doc */
     0,                                          /* tp_traverse */
     0,                                          /* tp_clear */
-    0,                                          /* tp_richcompare */
+    (richcmpfunc)PyThunk_LazyRichCompare,                                          /* tp_richcompare */
     0,                                          /* tp_weaklistoffset */
     0,                                          /* tp_iter */
     0,                                          /* tp_iternext */

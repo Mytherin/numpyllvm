@@ -16,6 +16,7 @@ ThunkOperation *ThunkOperation_FromUnary(
 	void *gencode_function, 
 	base_function_unary base, 
 	char *opname);
+
 ThunkOperation *ThunkOperation_FromBinary(
 	PyObject *left, 
 	PyObject *right, 

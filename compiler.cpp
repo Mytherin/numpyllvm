@@ -36,6 +36,8 @@
 
 using namespace llvm;
 
+typedef Value* (*binary_gencode)(IRBuilder<>& builder, Value *left, Value *right);
+
 static JITFunction* 
 CreateJITFunction(Thread *thread, Pipeline *pipeline) {
     JITFunction *jf = (JITFunction*) calloc(1, sizeof(JITFunction));
@@ -226,8 +228,9 @@ PerformOperation(IRBuilder<>& builder, LLVMContext& context, Operation *op, Valu
             return NULL;
         }
         assert(binop->operation->gencode.gencode);
-        v = builder.CreateMul(l, r);
+        v = ((binary_gencode) binop->operation->gencode.gencode)(builder, l, r);
     } else if (op->Type() == OPTYPE_unop) {
+        // todo: use gencode here
         v = NULL;
     } else {
         printf("Unrecognized operation!");
@@ -240,11 +243,17 @@ PerformOperation(IRBuilder<>& builder, LLVMContext& context, Operation *op, Valu
                 AllocaInst *address = (AllocaInst*) it->alloca_address;
                 LoadInst *result_address = builder.CreateLoad(address, "blablablabla");
                 Value *resptr = builder.CreateGEP(column_type, result_address, index, "result[i]");
-                builder.CreateStore(v, resptr, "result[i] = value");
+                Value *stored_value = v;
+                if (v->getType() != column_type) {
+                    // types do not match, have to cast
+                    // FIXME floating point casts
+                    stored_value = builder.CreateIntCast(v, column_type, true);
+                }
+                builder.CreateStore(stored_value, resptr, "result[i] = value");
                 return v;
             }
         }
-        printf("Result of operation has to be materialized, but not found in outputData");
+        fprintf(stderr, "Result of operation has to be materialized, but not found in outputData");
         return NULL;
     }
     return v;
