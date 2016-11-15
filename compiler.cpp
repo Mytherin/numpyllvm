@@ -4,39 +4,9 @@
 #include "llvmjit.hpp"
 #include "optimizer.hpp"
 
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ExecutionEngine/GenericValue.h"
-#include "llvm/ExecutionEngine/Interpreter.h"
-#include "llvm/IR/Constants.h"
-#include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
-#include "llvm/Support/ManagedStatic.h"
-#include "llvm/Support/TargetSelect.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/raw_os_ostream.h"
-
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/IR/BasicBlock.h>
-#include <llvm/IR/CallingConv.h>
-#include <llvm/IR/Constants.h>
-#include <llvm/IR/DerivedTypes.h>
-#include <llvm/IR/Function.h>
-#include <llvm/IR/GlobalVariable.h>
-#include <llvm/IR/InlineAsm.h>
-#include <llvm/IR/Instructions.h>
-#include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/Module.h>
-#include <llvm/Support/FormattedStream.h>
-#include <llvm/Support/MathExtras.h>
-
 #include <iostream>
 
 using namespace llvm;
-
-typedef Value* (*binary_gencode)(IRBuilder<>& builder, Value *left, Value *right);
 
 static JITFunction* 
 CreateJITFunction(Thread *thread, Pipeline *pipeline) {
@@ -81,6 +51,8 @@ JITFunctionDECREF(JITFunction *f) {
 void 
 ExecuteFunction(JITFunction *f, size_t start, size_t end) {
     if (f->function) {
+        int i = 0;
+        long long *output_sizes = (long long*) malloc(f->pipeline->outputData->objects.size() * sizeof(long long));
         printf("--%s Inputs--\n[", f->pipeline->name);
         for(int i = 0; i < f->pipeline->inputData->objects.size(); i++) {
             printf("%p ", f->inputs[i]);
@@ -92,12 +64,18 @@ ExecuteFunction(JITFunction *f, size_t start, size_t end) {
         }
         printf("]\n");
         // compilable function
-        f->function(f->outputs, f->inputs, start, end);
+        f->function(f->outputs, f->inputs, start, end, output_sizes);
         printf("--%s Output--\n[", f->pipeline->name);
         for(int i = start; i < end; i++) {
             printf("%lld ", (long long)((npy_int64*) f->outputs[0])[i]);
         }
         printf("]\n");
+        for (auto it = f->pipeline->outputData->objects.begin(); it != f->pipeline->outputData->objects.end(); it++) {
+            long long result_size = output_sizes[i];
+            PyArray_DIMS(it->source->object->storage)[0] = output_sizes[i] + 1;
+            printf("Output size: %lld\n", result_size);
+        }
+        free(output_sizes);
     } else {
         PyArrayObject *result = NULL;
         printf("Execute pipeline %s\n", f->pipeline->name);
@@ -196,8 +174,26 @@ getLLVMType(LLVMContext& context, int numpy_type) {
     return NULL;
 }
 
+static void
+PerformInitialization(JITInformation& info, Operation *op) {
+    if (op->Type() == OPTYPE_binop) {
+        BinaryOperation *binop = (BinaryOperation*) op;
+        PerformInitialization(info, binop->LHS);
+        PerformInitialization(info, binop->RHS);
+        if (binop->operation->gencode.initialize) {
+            ((initialize_gencode)binop->operation->gencode.initialize)(info, op);
+        }
+    } else if (op->Type() == OPTYPE_unop) {
+        UnaryOperation *unop = (UnaryOperation*) op;
+        PerformInitialization(info, unop->LHS);
+        if (unop->operation->gencode.initialize) {
+            ((initialize_gencode)unop->operation->gencode.initialize)(info, op);
+        }
+    }
+}
+
 static Value*
-PerformOperation(IRBuilder<>& builder, LLVMContext& context, Operation *op, Value *index, DataBlock *inputData, DataBlock *outputData) {
+PerformOperation(JITInformation& info, IRBuilder<>& builder, LLVMContext& context, Operation *op, DataBlock *inputData, DataBlock *outputData) {
     Value *v = NULL;
     if (op->Type() == OPTYPE_obj || op->Type() == OPTYPE_pipeline) {
         bool found = false;
@@ -209,7 +205,7 @@ PerformOperation(IRBuilder<>& builder, LLVMContext& context, Operation *op, Valu
                 } else {
                     AllocaInst *address = (AllocaInst*) it->alloca_address;
                     LoadInst *value_address = builder.CreateLoad(address);
-                    Value *colptr = builder.CreateGEP(column_type, value_address, index, "column[i]");
+                    Value *colptr = builder.CreateGEP(column_type, value_address, info.index, "column[i]");
                     v = builder.CreateLoad(colptr);
                 }
                 found = true;
@@ -222,16 +218,17 @@ PerformOperation(IRBuilder<>& builder, LLVMContext& context, Operation *op, Valu
         }
     } else if (op->Type() == OPTYPE_binop) {
         BinaryOperation *binop = (BinaryOperation*) op;
-        Value *l = PerformOperation(builder, context, binop->LHS, index, inputData, outputData);
-        Value *r = PerformOperation(builder, context, binop->RHS, index, inputData, outputData);
+        Value *l = PerformOperation(info, builder, context, binop->LHS, inputData, outputData);
+        Value *r = PerformOperation(info, builder, context, binop->RHS, inputData, outputData);
         if (l == NULL || r == NULL) {
             return NULL;
         }
         assert(binop->operation->gencode.gencode);
-        v = ((binary_gencode) binop->operation->gencode.gencode)(builder, l, r);
+        v = ((binary_gencode) binop->operation->gencode.gencode)(info, op, l, r);
     } else if (op->Type() == OPTYPE_unop) {
         // todo: use gencode here
         v = NULL;
+        assert(0);
     } else {
         printf("Unrecognized operation!");
         return NULL;
@@ -241,9 +238,10 @@ PerformOperation(IRBuilder<>& builder, LLVMContext& context, Operation *op, Valu
             if (it->operation == op) {
                 Type *column_type = getLLVMType(context, it->source->type);
                 AllocaInst *address = (AllocaInst*) it->alloca_address;
-                LoadInst *result_address = builder.CreateLoad(address, "blablablabla");
-                Value *resptr = builder.CreateGEP(column_type, result_address, index, "result[i]");
+                LoadInst *result_address = builder.CreateLoad(address);
+                Value *resptr = builder.CreateGEP(column_type, result_address, info.index, "result[i]");
                 Value *stored_value = v;
+                it->index_addr = info.index_addr;
                 if (v->getType() != column_type) {
                     // types do not match, have to cast
                     // FIXME floating point casts
@@ -306,10 +304,11 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
     std::string fname = std::string("PipelineFunction") + std::to_string(thread->functions++);
     size_t input_count = pipeline->inputData->objects.size();
     size_t output_count = pipeline->outputData->objects.size();
-    size_t function_arg_count = 4;
-    size_t arg_count = input_count + output_count + 2;
+    size_t function_arg_count = 5;
+    size_t arg_count = input_count + output_count + 3;
     size_t start_addr = input_count + output_count;
     size_t end_addr = start_addr + 1;
+    size_t result_sizes_addr = end_addr + 1;
     IRBuilder<> *builder = &thread->builder;
     auto passmanager = CreatePassManager(module, thread->jit.get());
 
@@ -319,7 +318,9 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
     Type *int8ptr_tpe = PointerType::get(int8_tpe, 0);
     Type *int8ptrptr_tpe = PointerType::get(int8ptr_tpe, 0);
     Type *int64_tpe = Type::getInt64Ty(thread->context);
+    Type *int64ptr_tpe = PointerType::get(int64_tpe, 0);
 
+    JITInformation info;
 
     // arguments of the function
     // the arguments are (void **result, void** inputs, size_t start, size_t end);
@@ -330,6 +331,7 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
     arguments[i++] = int8ptrptr_tpe;  // void** inputs
     arguments[i++] = int64_tpe;       // size_t start
     arguments[i++] = int64_tpe;       // size_t end
+    arguments[i++] = int64ptr_tpe;  // size_t* result_sizes
     assert(i == function_arg_count);
 
     /*for(auto inputs = pipeline->inputData->objects.begin(); inputs != pipeline->inputData->objects.end(); inputs++, i++) {
@@ -351,6 +353,16 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
     BasicBlock *loop_inc   = BasicBlock::Create(thread->context, "for.inc", function, 0);
     BasicBlock *loop_end   = BasicBlock::Create(thread->context, "for.end", function, 0);
 
+    info.builder = &thread->builder;
+    info.context = &thread->context;
+    info.function = function;
+    info.loop_entry = loop_entry;
+    info.loop_cond = loop_cond;
+    info.loop_body = loop_body;
+    info.loop_inc = loop_inc;
+    info.loop_end = loop_end;
+    info.current = loop_body;
+
 #ifndef _NOTDEBUG
     // argument names (for debug purposes only)
     std::vector<std::string> argument_names(arg_count);
@@ -363,6 +375,7 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
     }
     argument_names[i++] = "start";
     argument_names[i++] = "end";
+    argument_names[i++] = "result_sizes";
 #endif
 
     std::vector<AllocaInst*> argument_addresses(arg_count);
@@ -407,8 +420,13 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
         argument_addresses[i] = builder->CreateAlloca(arguments[3], nullptr, argument_names[i]);
         builder->CreateStore(&*args, argument_addresses[i]);
         args++; i++;
+        argument_addresses[i] = builder->CreateAlloca(arguments[4], nullptr, argument_names[i]);
+        builder->CreateStore(&*args, argument_addresses[i]);
+        args++; i++;
         assert(args == function->arg_end());
         assert(i == arg_count);
+
+        PerformInitialization(info, pipeline->operation);
 
         builder->CreateBr(loop_cond);
     }
@@ -425,10 +443,12 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
     // loop body: perform the computation
     builder->SetInsertPoint(loop_body);
     {
-         LoadInst *index = builder->CreateLoad(argument_addresses[start_addr], "index");
+        LoadInst *index = builder->CreateLoad(argument_addresses[start_addr], "index");
+        info.index = index;
+        info.index_addr = argument_addresses[start_addr];
         // perform the computation over the given index
         // we don't use the return value because the final assignment has already taken place
-        Value *v = PerformOperation(thread->builder, thread->context, pipeline->operation, index, pipeline->inputData, pipeline->outputData);
+        Value *v = PerformOperation(info, thread->builder, thread->context, pipeline->operation, pipeline->inputData, pipeline->outputData);
         if (v == NULL) {
             // failed to perform operation
             printf("Failed to compile pipeline %s\n", pipeline->name);
@@ -451,6 +471,16 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
     // loop end: return; (nothing happens here because we have no return value)
     builder->SetInsertPoint(loop_end);
     {
+        // return the output size of each of the columns
+        int i = 0;
+        Value *result_sizes = builder->CreateLoad(argument_addresses[result_sizes_addr], "result_sizes[]");
+        for(auto it = pipeline->outputData->objects.begin(); it != pipeline->outputData->objects.end(); it++) {
+            LoadInst* output_count = builder->CreateLoad((Value*) it->index_addr, "count");
+            Value *output_addr = builder->CreateGEP(int64_tpe, result_sizes, ConstantInt::get(int64_tpe, i, true));
+            builder->CreateStore(output_count, output_addr);
+            i++;
+        }
+
         builder->CreateRet(ConstantInt::get(int64_tpe, 0, true));
     }
 

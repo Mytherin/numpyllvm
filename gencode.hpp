@@ -18,7 +18,8 @@ typedef enum {
 
 struct GenCodeInfo {
 	gencode_type type;
-	void *gencode;               /* the function called to generate the LLVM code for this operation */
+	void *initialize;            /* the function called to generate the LLVM code for the initialization */
+	void *gencode;               /* the function called to generate the LLVM code for this operation in the loop */
 	void *base;                  /* the base NumPy function to call (for when there is no gencode or for when compiling is too expensive) */
 	PyObject *parameter[2];
 };

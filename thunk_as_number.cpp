@@ -2,38 +2,13 @@
 #include "thunk.hpp"
 #include "debug_printer.hpp"
 
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ExecutionEngine/GenericValue.h"
-#include "llvm/ExecutionEngine/Interpreter.h"
-#include "llvm/IR/Constants.h"
-#include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
-#include "llvm/Support/ManagedStatic.h"
-#include "llvm/Support/TargetSelect.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/raw_os_ostream.h"
-
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/IR/BasicBlock.h>
-#include <llvm/IR/CallingConv.h>
-#include <llvm/IR/Constants.h>
-#include <llvm/IR/DerivedTypes.h>
-#include <llvm/IR/Function.h>
-#include <llvm/IR/GlobalVariable.h>
-#include <llvm/IR/InlineAsm.h>
-#include <llvm/IR/Instructions.h>
-#include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/Module.h>
-#include <llvm/Support/FormattedStream.h>
-#include <llvm/Support/MathExtras.h>
+#include "compiler.hpp"
 
 using namespace llvm;
 
-Value *llvm_generate_gt(IRBuilder<>& builder, Value *l, Value *r) {
-    return builder.CreateICmpSGT(l, r);
+Value *llvm_generate_ge(JITInformation& inp, Operation *op, Value *l, Value *r) {
+    // FIXME: FCmp, unsigned ICmp (depends on types of Value)
+    return inp.builder->CreateICmpSGE(l, r);
 }
 
 PyObject*
@@ -56,7 +31,7 @@ PyThunk_LazyRichCompare(PyThunkObject *self, PyObject *other, int cmp_op) {
         (PyObject*) self, 
         (PyObject*) other_thunk, 
         optype_vectorizable, 
-        (void*) llvm_generate_gt, 
+        (void*) llvm_generate_ge, 
         NULL, 
         strdup(">="));
 
@@ -67,8 +42,8 @@ PyThunk_LazyRichCompare(PyThunkObject *self, PyObject *other, int cmp_op) {
         );
 }
 
-Value *llvm_generate_multiply(IRBuilder<>& builder, Value *l, Value *r) {
-    return builder.CreateMul(l, r);
+Value *llvm_generate_multiply(JITInformation& inp, Operation *op, Value *l, Value *r) {
+    return inp.builder->CreateMul(l, r);
 }
 
 static PyObject*

@@ -6,12 +6,12 @@
 #include <string>
 #include "debug_printer.hpp"
 
-ssize_t 
+ssize_t
 default_cardinality_function(ssize_t *inputs) {
     return inputs[0];
 }
 
-ssize_t 
+ssize_t
 default_binary_cardinality_function(ssize_t *inputs) {
     // if any of the two inputs is a constant, the other size is used
     if (inputs[0] == 1) return inputs[1];

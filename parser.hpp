@@ -71,7 +71,8 @@ class UnaryOperation : public Operation {
 public:
     ThunkOperation *operation;
     Operation* LHS;
-    UnaryOperation(PyThunkObject *result_object, ThunkOperation *operation, Operation *LHS) : Operation(result_object), operation(operation), LHS(LHS) {} 
+    void *extra;
+    UnaryOperation(PyThunkObject *result_object, ThunkOperation *operation, Operation *LHS) : Operation(result_object), operation(operation), LHS(LHS), extra(NULL) {} 
     virtual operation_type Type() { return OPTYPE_unop; }
 };
 
@@ -80,7 +81,8 @@ class BinaryOperation : public Operation {
 public:
     ThunkOperation *operation;
     Operation* LHS, *RHS;
-    BinaryOperation(PyThunkObject *result_object, ThunkOperation *operation, Operation *LHS, Operation *RHS) : Operation(result_object), operation(operation), LHS(LHS), RHS(RHS) {} 
+    void *extra;
+    BinaryOperation(PyThunkObject *result_object, ThunkOperation *operation, Operation *LHS, Operation *RHS) : Operation(result_object), operation(operation), LHS(LHS), RHS(RHS), extra(NULL) {} 
     virtual operation_type Type() { return OPTYPE_binop; }
 };
 
@@ -103,6 +105,7 @@ public:
     Operation *operation;
     DataSource *source;
     void *alloca_address;
+    void *index_addr;
 
     DataElement(Operation *op, DataSource *source) : operation(op), source(source) { }
 };
