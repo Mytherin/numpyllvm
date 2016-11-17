@@ -100,7 +100,7 @@ _thunk_max(PyThunkObject *self, PyObject *unused) {
     }
     ThunkOperation *op = ThunkOperation_FromUnary(
         (PyObject*) self, 
-        optype_vectorizable, 
+        optype_parallelbreaker, 
         (void*) llvm_generate_max, 
         NULL, 
         strdup("max"));
@@ -141,7 +141,7 @@ _thunk_sum(PyThunkObject *self, PyObject *unused) {
     }
     ThunkOperation *op = ThunkOperation_FromUnary(
         (PyObject*) self, 
-        optype_vectorizable, 
+        optype_parallelbreaker, 
         (void*) llvm_generate_sum, 
         NULL, 
         strdup("sum"));

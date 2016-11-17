@@ -134,6 +134,7 @@ public:
     bool evaluated;
     JITFunction *function;
     bool scheduled_for_execution;
+    bool scheduled_for_compilation;
     semaphore_struct semaphore;
     semaphore_struct lock;
 };

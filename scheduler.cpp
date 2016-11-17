@@ -12,28 +12,21 @@ static void ScheduleFunction(JITFunction *jf);
 
 void
 ScheduleCompilation(Pipeline *pipeline) {
+    bool all_evaluated = true;
     PipelineNode *node = pipeline->children;
+    CompileTask* task = NULL;
     while(node) {
         ScheduleCompilation(node->child);
         node = node->next;
     }
-    CompileTask* task = (CompileTask*) calloc(1, sizeof(CompileTask));
-    task->type = tasktype_compile;
-    task->pipeline = pipeline;
-    ScheduleTask((Task*) task);
-}
-
-void
-ScheduleExecution(Pipeline *pipeline) {
-    PipelineNode *node = pipeline->children;
-    bool all_evaluated = true;
-    // schedule a pipeline for execution
+    // schedule a pipeline for compilation
     semaphore_wait(&pipeline->lock);
-    // check if the pipeline has already been scheduled
-    if (pipeline->scheduled_for_execution) {
+    if (pipeline->scheduled_for_compilation) {
         printf("Failed to schedule pipeline %s - Already Scheduled\n", pipeline->name);
         goto unlock;
     }
+    
+    node = pipeline->children;
     // if not, check if all children have been evaluated
     while(node) {
         if (!node->child->evaluated) {
@@ -47,11 +40,47 @@ ScheduleExecution(Pipeline *pipeline) {
         goto unlock;
     }
 
-    // if all children have to be evaluated, check if the function has been compiled
-    if (!pipeline->function) {
-        printf("Failed to schedule pipeline %s - Not Compiled\n", pipeline->name);
+    pipeline->scheduled_for_compilation = true;
+    task = (CompileTask*) calloc(1, sizeof(CompileTask));
+    task->type = tasktype_compile;
+    task->pipeline = pipeline;
+    ScheduleTask((Task*) task);
+unlock:
+    semaphore_increment(&pipeline->lock);
+}
+
+void
+ScheduleExecution(Pipeline *pipeline) {
+    PipelineNode *node = pipeline->children;
+    bool all_evaluated = true;
+    // schedule a pipeline for execution
+    semaphore_wait(&pipeline->lock);
+    // check if the pipeline has already been scheduled
+    if (pipeline->scheduled_for_execution) {
+        printf("Failed to schedule pipeline %s - Already Scheduled\n", pipeline->name);
         goto unlock;
     }
+
+    // check if the function has been compiled, if not, schedule it
+    if (!pipeline->function) {
+        semaphore_increment(&pipeline->lock);
+        ScheduleCompilation(pipeline);
+        return;
+    }
+
+    // if not, check if all children have been evaluated
+    while(node) {
+        if (!node->child->evaluated) {
+            all_evaluated = false;
+            break;
+        }
+        node = node->next;
+    }
+    if (!all_evaluated) {
+        printf("Failed to schedule pipeline %s - Children Not Evaluated\n", pipeline->name);
+        goto unlock;
+    }
+
     pipeline->scheduled_for_execution = true;
     ScheduleFunction(pipeline->function);
 unlock:

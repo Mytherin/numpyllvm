@@ -14,6 +14,8 @@ CreatePipeline() {
     pipeline->name = getname("Pipe");
     pipeline->evaluated = false;
     pipeline->semaphore = NULL;
+    pipeline->scheduled_for_compilation = false;
+    pipeline->scheduled_for_execution = false;
     semaphore_init(&pipeline->lock, 1);
     return pipeline;
 }
@@ -116,22 +118,24 @@ ParseOperationRecursive(PyThunkObject *thunk, Pipeline *current, DataSource *out
         }
         // now that we know if any of the child operations are breaking operations, we recursively create the operation tree
         for(int i = 0; i < thunk->operation->gencode.type; i++) {
-            if (breaker) {
+            PyThunkObject *thunk_child = (PyThunkObject*) thunk->operation->gencode.parameter[i];
+            // it makes no sense to create a pipeline for an evaluated child, because the pipeline will be empty
+            if (breaker && !thunk_child->evaluated) {
                 // if any child operation is a breaking operation, we create a separate pipeline for each child
                 Pipeline *child = CreatePipeline();
                 DataSource *source = new DataSource(NULL, NULL, 0, 0);
                 // we materialize after a breaking operation
-                child->operation = ParseOperationRecursive((PyThunkObject*) thunk->operation->gencode.parameter[i], child, source);
+                child->operation = ParseOperationRecursive(thunk_child, child, source);
                 // As input to the current operation, we create a "PipelineOperation". This is a placeholder operation that expects to receive input as result of the pipeline operation
-                operations[i] = new PipelineOperation(child, (PyThunkObject*) thunk->operation->gencode.parameter[i]);
+                operations[i] = new PipelineOperation(child, thunk_child);
                 // as input data we add the child thunk, and set the data pointers to NULL for now (because they are not present yet, as the result is not yet computed)
                 current->inputData->objects.push_back(DataElement(operations[i], source));
                 AddChild(current, child);
             } else {
                 // if there is no breaking operation, we simply continue with parsing the current pipeline recursively
-                operations[i] = ParseOperationRecursive((PyThunkObject*) thunk->operation->gencode.parameter[i], current, NULL);
+                operations[i] = ParseOperationRecursive(thunk_child, current, NULL);
             }
-            child_cardinalities[i] = ((PyThunkObject*) thunk->operation->gencode.parameter[i])->cardinality;
+            child_cardinalities[i] = (thunk_child)->cardinality;
         }
         thunk->cardinality = thunk->cardinality_function(child_cardinalities);
 

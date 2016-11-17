@@ -72,7 +72,7 @@ ExecuteFunction(JITFunction *f, size_t start, size_t end) {
         printf("]\n");
         for (auto it = f->pipeline->outputData->objects.begin(); it != f->pipeline->outputData->objects.end(); it++) {
             long long result_size = output_sizes[i];
-            PyArray_DIMS(it->source->object->storage)[0] = output_sizes[i] + 1;
+            PyArray_DIMS(it->source->object->storage)[0] = output_sizes[i];
             printf("Output size: %lld\n", result_size);
         }
         free(output_sizes);
@@ -483,7 +483,7 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
             if (it->index_addr) {
                 output_count = builder->CreateLoad((Value*) it->index_addr, "count");
             } else {
-                output_count = ConstantInt::get(int64_tpe, 0, true);
+                output_count = ConstantInt::get(int64_tpe, 1, true);
             }
             Value *output_addr = builder->CreateGEP(int64_tpe, result_sizes, ConstantInt::get(int64_tpe, i, true));
             builder->CreateStore(output_count, output_addr);

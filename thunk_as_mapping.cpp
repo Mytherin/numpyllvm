@@ -15,7 +15,7 @@ Value *llvm_generate_subscript(JITInformation& inp, Operation *op, Value *l, Val
     LoadInst *index = inp.builder->CreateLoad((Value*) ((BinaryOperation*) op)->extra, "index_branch");
     Value *incremented_index = inp.builder->CreateAdd(index, ConstantInt::get(Type::getInt64Ty(*inp.context), 1, true), "index++");
     inp.builder->CreateStore(incremented_index, (Value*) ((BinaryOperation*) op)->extra);
-    inp.index = incremented_index;
+    inp.index = index;
     inp.index_addr = (Value*) ((BinaryOperation*) op)->extra;
     return l;
 }
@@ -25,7 +25,7 @@ void llvm_initialize_subscript(JITInformation& info, Operation *op) {
 	Type *int64_tpe = Type::getInt64Ty(*info.context);
 	AllocaInst *index = info.builder->CreateAlloca(int64_tpe, nullptr);
 	// we start at -1 because we first increment and then use the index
-    info.builder->CreateStore(ConstantInt::get(int64_tpe, -1, true), index);
+    info.builder->CreateStore(ConstantInt::get(int64_tpe, 0, true), index);
 	((BinaryOperation*)op)->extra = (void*) index;
 }
 
