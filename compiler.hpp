@@ -52,6 +52,7 @@ typedef struct {
 } JITInformation;
 
 typedef void (*initialize_gencode)(JITInformation& info, Operation *op);
+typedef llvm::Value* (*unary_gencode)(JITInformation& info, Operation *op, llvm::Value *left);
 typedef llvm::Value* (*binary_gencode)(JITInformation& info, Operation *op, llvm::Value *left, llvm::Value *right);
 
 class JITFunction;

@@ -226,9 +226,13 @@ PerformOperation(JITInformation& info, IRBuilder<>& builder, LLVMContext& contex
         assert(binop->operation->gencode.gencode);
         v = ((binary_gencode) binop->operation->gencode.gencode)(info, op, l, r);
     } else if (op->Type() == OPTYPE_unop) {
-        // todo: use gencode here
-        v = NULL;
-        assert(0);
+        UnaryOperation *unop = (UnaryOperation*) op;
+        Value *l = PerformOperation(info, builder, context, unop->LHS, inputData, outputData);
+        if (l == NULL) {
+            return NULL;
+        }
+        assert(unop->operation->gencode.gencode);
+        v = ((unary_gencode) unop->operation->gencode.gencode)(info, op, l);
     } else {
         printf("Unrecognized operation!");
         return NULL;
@@ -392,7 +396,7 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
             argument_addresses[i] = builder->CreateAlloca(column_type, nullptr, argument_names[i]);
             builder->CreateStore(columnptr, argument_addresses[i]);
             outputs->alloca_address = (void*) argument_addresses[i];
-            if (size == 0) {
+            if (size == 0 || size == 1) {
                 assert(outputs->source->size >= 0);
                 size = outputs->source->size;
             }
@@ -407,7 +411,7 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
             argument_addresses[i] = builder->CreateAlloca(column_type, nullptr, argument_names[i]);
             builder->CreateStore(columnptr, argument_addresses[i]);
             inputs->alloca_address = (void*) argument_addresses[i];
-            if (size == 0) {
+            if (size == 0 || size == 1) {
                 assert(inputs->source->size >= 0);
                 size = inputs->source->size;
             }
@@ -475,7 +479,12 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
         int i = 0;
         Value *result_sizes = builder->CreateLoad(argument_addresses[result_sizes_addr], "result_sizes[]");
         for(auto it = pipeline->outputData->objects.begin(); it != pipeline->outputData->objects.end(); it++) {
-            LoadInst* output_count = builder->CreateLoad((Value*) it->index_addr, "count");
+            Value* output_count;
+            if (it->index_addr) {
+                output_count = builder->CreateLoad((Value*) it->index_addr, "count");
+            } else {
+                output_count = ConstantInt::get(int64_tpe, 0, true);
+            }
             Value *output_addr = builder->CreateGEP(int64_tpe, result_sizes, ConstantInt::get(int64_tpe, i, true));
             builder->CreateStore(output_count, output_addr);
             i++;
@@ -490,7 +499,7 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
 #endif
 
     //printf("LLVM for pipeline %s\n", pipeline->name);
-    //module->dump();
+    module->dump();
     passmanager->run(*function);
     // dump generated LLVM code
     //module->dump();
