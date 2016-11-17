@@ -48,13 +48,17 @@ Value *llvm_generate_multiply(JITInformation& inp, Operation *op, Value *l, Valu
 
 static PyObject*
 thunk_lazymultiply(PyObject *v, PyObject *w) {
-    if (!PyThunk_CheckExact(v) || !PyThunk_CheckExact(w)) {
-        PyErr_SetString(PyExc_TypeError, "Expected two thunk objects as parameters.");
-        return NULL;
+    PyThunkObject *right = (PyThunkObject*) w;
+    if (!PyThunk_CheckExact(right)) {
+        PyObject *arr = PyArray_FromAny(w, NULL, 0, 0, 0, NULL);
+        if (arr == NULL) {
+            PyErr_SetString(PyExc_TypeError, "could not coerse right operand to thunk");
+            return NULL;
+        }
+        right = (PyThunkObject*) PyThunk_FromArray(NULL, arr);
     }
     PyThunkObject *left = (PyThunkObject*) v;
-    PyThunkObject *right = (PyThunkObject*) w;
-    if (left->cardinality > 0 && right->cardinality > 0 && 
+    if (left->cardinality > 1 && right->cardinality > 1 && 
         left->cardinality == cardinality_exact && right->cardinality == cardinality_exact && 
         left->cardinality != right->cardinality) {
         PyErr_SetString(PyExc_TypeError, "Incompatible cardinality.");
