@@ -30,6 +30,7 @@ DestroyPipeline(Pipeline *pipeline) {
     if (pipeline->children) {
         PipelineNode *node = pipeline->children;
         while(node) {
+            node->child->parent = NULL;
             DestroyPipeline(node->child);
             node = node->next;
         }
