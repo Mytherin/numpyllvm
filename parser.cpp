@@ -24,6 +24,16 @@ void
 DestroyPipeline(Pipeline *pipeline) {
     //DestroyOperation(pipeline->operation);
     //DestroyChildren(pipeline->children);
+    if (pipeline->parent) {
+        return;
+    }
+    if (pipeline->children) {
+        PipelineNode *node = pipeline->children;
+        while(node) {
+            DestroyPipeline(node->child);
+            node = node->next;
+        }
+    }
     if (pipeline->semaphore) {
         semaphore_destroy(&pipeline->semaphore);
     }
