@@ -60,7 +60,7 @@ class JITFunction;
 JITFunction* CompilePipeline(Pipeline *pipeline, Thread *thread);
 JITFunction* GenerateBaseFunction(Pipeline *pipeline, Thread *thread);
 void JITFunctionDECREF(JITFunction *f);
-void ExecuteFunction(JITFunction *f, size_t start, size_t end);
+void ExecuteFunction(JITFunction *f, size_t start, size_t end, int thread_nr);
 bool CompilableOperation(Operation *operation);
 
 #endif

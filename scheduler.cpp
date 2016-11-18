@@ -87,8 +87,11 @@ unlock:
     semaphore_increment(&pipeline->lock);
 }
 
+int THREAD_COUNT = 8;
+
 static void
 ScheduleFunction(JITFunction *jf) {
+    int thread_count = THREAD_COUNT;
     if (jf->function) {
         // compilable function
         // create inputs/outputs for the function
@@ -104,7 +107,7 @@ ScheduleFunction(JITFunction *jf) {
         for (auto it = jf->pipeline->outputData->objects.begin(); it != jf->pipeline->outputData->objects.end(); it++, i++) {
             if (it->source->object->storage == NULL) {
                 npy_intp elements[] = { (npy_intp) it->source->size };
-                // todo: set to PyArray_EMPTY
+                // FIXME: set to PyArray_EMPTY
                 it->source->object->storage = (PyArrayObject*) PyArray_ZEROS(1, elements, it->source->type, 0);
                 it->source->data = PyArray_DATA(it->source->object->storage);
             }
@@ -113,14 +116,37 @@ ScheduleFunction(JITFunction *jf) {
     } else {
         // base function
         assert(jf->base);
+        thread_count = 1;
     }
-    ExecuteTask *task = (ExecuteTask*) malloc(sizeof(ExecuteTask));
+    /*ExecuteTask *task = (ExecuteTask*) malloc(sizeof(ExecuteTask));
     task->type = tasktype_execute;
     task->start = 0;
     task->end = jf->size;
     task->function = jf;
     jf->references++;
     ScheduleTask((Task*) task);
+    */
+    jf->output_starts = (ssize_t*) malloc(sizeof(ssize_t) * thread_count);
+    jf->output_ends = (ssize_t**) malloc(sizeof(ssize_t*) * jf->pipeline->outputData->objects.size());
+    for(int i = 0; i < jf->pipeline->outputData->objects.size(); i++) {
+        jf->output_ends[i] = (ssize_t*) malloc(sizeof(ssize_t) * thread_count);
+    }
+    ssize_t increment = jf->size / thread_count;
+    ssize_t begin = -increment;
+    ssize_t end = 0;
+    for(int i = 0; i < thread_count; i++) {
+        begin = end;
+        end = i == thread_count - 1 ? jf->size : end + increment;
+        ExecuteTask *task = (ExecuteTask*) malloc(sizeof(ExecuteTask));
+        task->type = tasktype_execute;
+        task->start = begin;
+        task->end = end;
+        task->function = jf;
+        task->thread_nr = i;
+        jf->references++;
+        ScheduleTask((Task*) task);
+    }
+    jf->thread_count = thread_count;
 }
 
 void inline 
@@ -182,7 +208,7 @@ RunThread(Thread *thread) {
             case tasktype_execute: {
                 printf("Execute pipeline task.\n");
                 ExecuteTask *ex = (ExecuteTask*) task;
-                ExecuteFunction(ex->function, ex->start, ex->end);
+                ExecuteFunction(ex->function, ex->start, ex->end, ex->thread_nr);
                 JITFunctionDECREF(ex->function);
                 break;
             }

@@ -26,9 +26,33 @@ JITFunctionDECREF(JITFunction *f) {
         assert(f->pipeline);
         // after the function is evaluated, all output thunks have been evaluated
         f->pipeline->evaluated = true;
+        int i = 0;
         for (auto it = f->pipeline->outputData->objects.begin(); it != f->pipeline->outputData->objects.end(); it++) {
+            char *array_data = (char*) PyArray_DATA(it->source->object->storage);
+            for(int j = 1; j < f->thread_count; j++) {
+                if (f->output_ends[i][j - 1] != f->output_starts[j]) {
+                    ssize_t element_size = sizeof(long long); // FIXME
+                    // the start and end of the different thread outputs do not align
+                    // so we have to memmove them
+                    memmove(array_data + f->output_ends[i][j - 1] * element_size, 
+                        array_data + f->output_starts[j] * element_size, 
+                        (f->output_ends[i][j] - f->output_starts[j]) * element_size);
+                    f->output_ends[i][j] = f->output_ends[i][j - 1] + (f->output_ends[i][j] - f->output_starts[j]);
+                }
+            }
+            PyArray_DIMS(it->source->object->storage)[0] = f->output_ends[i][f->thread_count - 1];
             it->source->object->evaluated = true;
             printf("Evaluated object at %p\n", it->source->object);
+            free(f->output_ends[i]);
+            i++;
+        }
+        if (f->output_starts) {
+            free(f->output_starts);
+            f->output_starts = NULL;
+        }
+        if (f->output_ends) {
+            free(f->output_ends);
+            f->output_ends = NULL;
         }
         // if anyone was waiting for the pipeline to be evaluated, notify them
         if (f->pipeline->semaphore) {
@@ -49,36 +73,19 @@ JITFunctionDECREF(JITFunction *f) {
 }
 
 void 
-ExecuteFunction(JITFunction *f, size_t start, size_t end) {
+ExecuteFunction(JITFunction *f, size_t start, size_t end, int thread_nr) {
+    printf("Execute function %zu-%zu\n", start, end);
     if (f->function) {
-        int i = 0;
         long long *output_sizes = (long long*) malloc(f->pipeline->outputData->objects.size() * sizeof(long long));
-        printf("--%s Inputs--\n[", f->pipeline->name);
-        for(int i = 0; i < f->pipeline->inputData->objects.size(); i++) {
-            printf("%p ", f->inputs[i]);
-        }
-        printf("]\n");
-        printf("--%s Outputs--\n[", f->pipeline->name);
-        for(int i = 0; i < f->pipeline->outputData->objects.size(); i++) {
-            printf("%p ", f->outputs[i]);
-        }
-        printf("]\n");
         // compilable function
         f->function(f->outputs, f->inputs, start, end, output_sizes);
-        printf("--%s Output--\n[", f->pipeline->name);
-        for(int i = start; i < end; i++) {
-            printf("%lld ", (long long)((npy_int64*) f->outputs[0])[i]);
-        }
-        printf("]\n");
-        for (auto it = f->pipeline->outputData->objects.begin(); it != f->pipeline->outputData->objects.end(); it++) {
-            long long result_size = output_sizes[i];
-            PyArray_DIMS(it->source->object->storage)[0] = output_sizes[i];
-            printf("Output size: %lld\n", result_size);
+        f->output_starts[thread_nr] = start;
+        for(int i = 0; i < f->pipeline->outputData->objects.size(); i++) {
+            f->output_ends[i][thread_nr] = output_sizes[i];
         }
         free(output_sizes);
     } else {
         PyArrayObject *result = NULL;
-        printf("Execute pipeline %s\n", f->pipeline->name);
         assert(f->base);
         switch(f->pipeline->inputData->objects.size()) {
             case 0:
@@ -106,12 +113,6 @@ ExecuteFunction(JITFunction *f, size_t start, size_t end) {
         f->pipeline->outputData->objects[0].source->size = PyArray_SIZE(result);
         f->pipeline->outputData->objects[0].source->data = PyArray_DATA(result);
         f->pipeline->outputData->objects[0].source->type = PyArray_TYPE(result);
-        printf("--%s Outputs--\n[ %p ]\n", f->pipeline->name, PyArray_DATA(result));
-        printf("--%s Output--\n[", f->pipeline->name);
-        for(int i = start; i < PyArray_SIZE(result); i++) {
-            printf("%lld ", (long long)((npy_int64*) PyArray_DATA(result))[i]);
-        }
-        printf("]\n");
     }
 }
 
@@ -429,6 +430,7 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
         args++; i++;
         assert(args == function->arg_end());
         assert(i == arg_count);
+        info.index_addr = argument_addresses[start_addr];
 
         PerformInitialization(info, pipeline->operation);
 

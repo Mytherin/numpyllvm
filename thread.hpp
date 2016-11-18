@@ -42,7 +42,6 @@ public:
     std::unique_ptr<LLVMJIT> jit;
     // thread id
     pthread_t thread;
-
     Thread(void);
 };
 
@@ -57,6 +56,10 @@ public:
     ssize_t size;
     jit_function function;
     base_function base;
+    // result output sizes
+    ssize_t *output_starts;
+    ssize_t **output_ends;
+    int thread_count;
 };
 
 Thread* CreateThread();

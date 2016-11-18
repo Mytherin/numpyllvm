@@ -16,4 +16,4 @@ res.evaluate()
 print(res)
 print((a_nump[a_nump >= 50]).sum() * a_nump)
 
-print(str(res) == str(a_nump[a_nump >= 50].max()))
+print(str(res) == str(a_nump[a_nump >= 50].sum() * a_nump))

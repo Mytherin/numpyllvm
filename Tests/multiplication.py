@@ -30,5 +30,9 @@ res2.evaluate()
 print(res)
 print(res2)
 
+print(d_nump * e_nump * f_nump)
+
+print(numpy.sort(d_nump * e_nump * f_nump) * (a_nump * b_nump * c_nump))
+
 print(str(res) == str(d_nump * e_nump * f_nump))
 print(str(res2) == str(numpy.sort(d_nump * e_nump * f_nump) * (a_nump * b_nump * c_nump)))

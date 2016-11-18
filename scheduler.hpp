@@ -32,6 +32,7 @@ struct ExecuteTask {
     JITFunction *function;
     size_t start;
     size_t end;
+    int thread_nr;
 };
 
 class Thread;

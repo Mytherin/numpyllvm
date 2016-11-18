@@ -25,7 +25,7 @@ void llvm_initialize_subscript(JITInformation& info, Operation *op) {
 	Type *int64_tpe = Type::getInt64Ty(*info.context);
 	AllocaInst *index = info.builder->CreateAlloca(int64_tpe, nullptr);
 	// we start at -1 because we first increment and then use the index
-    info.builder->CreateStore(ConstantInt::get(int64_tpe, 0, true), index);
+    info.builder->CreateStore(info.builder->CreateLoad(info.index_addr), index);
 	((BinaryOperation*)op)->extra = (void*) index;
 }
 
