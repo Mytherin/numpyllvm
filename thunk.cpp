@@ -32,7 +32,7 @@ PyThunk_FromArray(PyObject *unused, PyObject* input) {
         PyErr_SetString(PyExc_TypeError, "Expected a NumPy array as parameter.");
         return NULL;
     }
-    thunk = (PyThunkObject *)PyObject_MALLOC(sizeof(PyThunkObject));
+    thunk = new PyThunkObject();
     if (thunk == NULL)
         return PyErr_NoMemory();
     PyObject_Init((PyObject*)thunk, &PyThunk_Type);
@@ -50,7 +50,7 @@ PyThunk_FromArray(PyObject *unused, PyObject* input) {
 PyObject*
 PyThunk_FromOperation(ThunkOperation *operation, cardinality_function cardinality_func, cardinality_type cardinality_tpe, int type) {
     PyThunkObject *thunk;
-    thunk = (PyThunkObject *)PyObject_MALLOC(sizeof(PyThunkObject));
+    thunk = new PyThunkObject();
     if (thunk == NULL)
         return PyErr_NoMemory();
     PyObject_Init((PyObject*)thunk, &PyThunk_Type);
@@ -62,6 +62,12 @@ PyThunk_FromOperation(ThunkOperation *operation, cardinality_function cardinalit
     thunk->cardinality_function = cardinality_func;
     thunk->type = type;
     thunk->name = getname("operation");
+    for(int i = 0; i < operation->gencode.type; i++) {
+        PyObject *parameter = operation->gencode.parameter[i];
+        if (PyThunk_CheckExact(parameter)) {
+            ((PyThunkObject*) parameter)->children.push_back(thunk);
+        }
+    }
     return (PyObject*)thunk;
 }
 
@@ -70,6 +76,15 @@ void PyThunk_Init(void) {
     import_umath();
     if (PyType_Ready(&PyThunk_Type) < 0)
         return;
+}
+
+void
+PyThunk_EvaluateChildren(PyThunkObject* thunk) {
+    for(auto it = thunk->children.begin(); it != thunk->children.end(); it++) {
+        Py_INCREF(*it);
+        PyThunk_Evaluate(*it);
+        Py_DECREF(*it);
+    }
 }
 
 PyObject*

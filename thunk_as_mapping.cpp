@@ -77,10 +77,18 @@ thunk_subscript(PyThunkObject *self, PyObject *other) {
         );
 }
 
+static int
+thunk_assign_subscript(PyThunkObject *self, PyObject *ind, PyObject *op) {
+	PyThunk_EvaluateChildren(self);
+	PyThunk_Evaluate(self);
+	self->storage->ob_type->tp_as_mapping->mp_ass_subscript((PyObject*) self->storage, ind, op);
+	return 0;
+}
+
 PyMappingMethods thunk_as_mapping = {
     (lenfunc)NULL,              /*mp_length*/
     (binaryfunc) thunk_subscript,        /*mp_subscript*/
-    (objobjargproc)NULL,       /*mp_ass_subscript*/
+    (objobjargproc) thunk_assign_subscript,       /*mp_ass_subscript*/
 };
 
 void initialize_thunk_as_mapping(void) {

@@ -5,6 +5,7 @@
 #define Py_THUNK_H
 
 #include "operation.hpp"
+#include <vector>
 
 typedef ssize_t (*cardinality_function)(ssize_t *inputs);
 
@@ -16,6 +17,8 @@ typedef enum {
 	cardinality_exact = 1,
 	cardinality_upper_bound = 2
 } cardinality_type;
+
+struct PyThunkObject;
 
 struct PyThunkObject {
 	PyObject_HEAD
@@ -35,6 +38,8 @@ struct PyThunkObject {
 	int type;
 	// name of thunk
 	char *name;
+	// objects that depend on this thunk for computation
+	std::vector<PyThunkObject*> children;
 };
 
 PyAPI_DATA(PyTypeObject) PyThunk_Type;
@@ -47,6 +52,7 @@ PyObject *PyThunk_FromOperation(ThunkOperation *operation, cardinality_function 
 
 void PyThunk_Init(void);
 
+void PyThunk_EvaluateChildren(PyThunkObject* thunk);
 PyObject* PyThunk_Evaluate(PyThunkObject *thunk);
 bool PyThunk_IsEvaluated(PyThunkObject *thunk);
 PyObject *PyThunk_AsArray(PyObject*);
