@@ -22,7 +22,7 @@
 
 #include <pthread.h>
 
-typedef long long (*jit_function)(void** inputs, void **outputs, long long start, long long end, long long* output_sizes); 
+typedef long long (*jit_function)(void** inputs, void **outputs, long long start, long long end, long long* output_sizes, long long thread_nr); 
 
 typedef llvm::Value (*gencode_nullary_function)(llvm::IRBuilder<>& builder, llvm::LLVMContext& context);
 typedef llvm::Value (*gencode_unary_function)(llvm::IRBuilder<>& builder, llvm::LLVMContext& context, llvm::Value *inp);

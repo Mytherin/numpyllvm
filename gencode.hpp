@@ -9,6 +9,9 @@ typedef PyArrayObject* (*base_function_nullary)(void);
 typedef PyArrayObject* (*base_function_unary)(PyArrayObject*);
 typedef PyArrayObject* (*base_function_binary)(PyArrayObject*,PyArrayObject*);
 
+typedef void (*initialize_data_function)(void *data_source, int thread_count);
+typedef void (*finalize_data_function)(void *jit_function, void *data_source, int thread_count);
+
 typedef enum {
 	gentype_unknown = 255,
 	gentype_noargs = 0,
@@ -20,6 +23,8 @@ struct GenCodeInfo {
 	gencode_type type;
 	void *initialize;            /* the function called to generate the LLVM code for the initialization */
 	void *gencode;               /* the function called to generate the LLVM code for this operation in the loop */
+	initialize_data_function initialize_data;
+	finalize_data_function finalize_data;
 	void *base;                  /* the base NumPy function to call (for when there is no gencode or for when compiling is too expensive) */
 	PyObject *parameter[2];
 };

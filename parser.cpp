@@ -172,6 +172,19 @@ ParseOperationRecursive(PyThunkObject *thunk, Pipeline *current, DataSource *out
     }
 }
 
+ThunkOperation*
+GetThunkOperation(Operation *op) {
+    switch(op->Type()) {
+        case OPTYPE_nullop:
+            return ((NullaryOperation*) op)->operation;
+        case OPTYPE_unop:
+            return ((UnaryOperation*) op)->operation;
+        case OPTYPE_binop:
+            return ((BinaryOperation*) op)->operation;
+        default:
+            return NULL;
+    }
+}
 Pipeline*
 ParsePipeline(PyThunkObject *thunk) {
     Pipeline *pipeline = CreatePipeline();

@@ -49,6 +49,7 @@ typedef struct {
     llvm::BasicBlock *current;
     llvm::Value *index;
     llvm::Value *index_addr;
+    llvm::Value *thread_addr;
 } JITInformation;
 
 typedef void (*initialize_gencode)(JITInformation& info, Operation *op);

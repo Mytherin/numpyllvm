@@ -28,21 +28,27 @@ JITFunctionDECREF(JITFunction *f) {
         f->pipeline->evaluated = true;
         int i = 0;
         for (auto it = f->pipeline->outputData->objects.begin(); it != f->pipeline->outputData->objects.end(); it++) {
-            char *array_data = (char*) PyArray_DATA(it->source->object->storage);
-            for(int j = 1; j < f->thread_count; j++) {
-                if (f->output_ends[i][j - 1] != f->output_starts[j]) {
-                    ssize_t element_size = sizeof(long long); // FIXME
-                    // the start and end of the different thread outputs do not align
-                    // so we have to memmove them
-                    memmove(array_data + f->output_ends[i][j - 1] * element_size, 
-                        array_data + f->output_starts[j] * element_size, 
-                        (f->output_ends[i][j] - f->output_starts[j]) * element_size);
-                    f->output_ends[i][j] = f->output_ends[i][j - 1] + (f->output_ends[i][j] - f->output_starts[j]);
+            // FIXME: aggregation functions, this as default and have optional "gather" function in gencode
+            ThunkOperation *thunkop = GetThunkOperation(it->operation);
+            if (thunkop && thunkop->gencode.finalize_data) {
+                thunkop->gencode.finalize_data(f, it->source, i);
+            } else {
+                char *array_data = (char*) PyArray_DATA(it->source->object->storage);
+                for(int j = 1; j < f->thread_count; j++) {
+                    if (f->output_ends[i][j - 1] != f->output_starts[j]) {
+                        ssize_t element_size = sizeof(long long); // FIXME
+                        // the start and end of the different thread outputs do not align
+                        // so we have to memmove them
+                        memmove(array_data + f->output_ends[i][j - 1] * element_size, 
+                            array_data + f->output_starts[j] * element_size, 
+                            (f->output_ends[i][j] - f->output_starts[j]) * element_size);
+                        f->output_ends[i][j] = f->output_ends[i][j - 1] + (f->output_ends[i][j] - f->output_starts[j]);
+                    }
                 }
+                PyArray_DIMS(it->source->object->storage)[0] = f->output_ends[i][f->thread_count - 1];
             }
-            PyArray_DIMS(it->source->object->storage)[0] = f->output_ends[i][f->thread_count - 1];
-            it->source->object->evaluated = true;
             printf("Evaluated object at %p\n", it->source->object);
+            it->source->object->evaluated = true;
             free(f->output_ends[i]);
             i++;
         }
@@ -78,7 +84,7 @@ ExecuteFunction(JITFunction *f, size_t start, size_t end, int thread_nr) {
     if (f->function) {
         long long *output_sizes = (long long*) malloc(f->pipeline->outputData->objects.size() * sizeof(long long));
         // compilable function
-        f->function(f->outputs, f->inputs, start, end, output_sizes);
+        f->function(f->outputs, f->inputs, start, end, output_sizes, thread_nr);
         f->output_starts[thread_nr] = start;
         for(int i = 0; i < f->pipeline->outputData->objects.size(); i++) {
             f->output_ends[i][thread_nr] = output_sizes[i];
@@ -309,11 +315,12 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
     std::string fname = std::string("PipelineFunction") + std::to_string(thread->functions++);
     size_t input_count = pipeline->inputData->objects.size();
     size_t output_count = pipeline->outputData->objects.size();
-    size_t function_arg_count = 5;
-    size_t arg_count = input_count + output_count + 3;
+    size_t function_arg_count = 6;
+    size_t arg_count = input_count + output_count + (function_arg_count - 2);
     size_t start_addr = input_count + output_count;
     size_t end_addr = start_addr + 1;
     size_t result_sizes_addr = end_addr + 1;
+    size_t thread_nr_addr = result_sizes_addr + 1;
     IRBuilder<> *builder = &thread->builder;
     auto passmanager = CreatePassManager(module, thread->jit.get());
 
@@ -337,6 +344,7 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
     arguments[i++] = int64_tpe;       // size_t start
     arguments[i++] = int64_tpe;       // size_t end
     arguments[i++] = int64ptr_tpe;  // size_t* result_sizes
+    arguments[i++] = int64_tpe;  // size_t thread_nr
     assert(i == function_arg_count);
 
     /*for(auto inputs = pipeline->inputData->objects.begin(); inputs != pipeline->inputData->objects.end(); inputs++, i++) {
@@ -381,6 +389,7 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
     argument_names[i++] = "start";
     argument_names[i++] = "end";
     argument_names[i++] = "result_sizes";
+    argument_names[i++] = "thread_nr";
 #endif
 
     std::vector<AllocaInst*> argument_addresses(arg_count);
@@ -428,9 +437,13 @@ CompilePipeline(Pipeline *pipeline, Thread *thread) {
         argument_addresses[i] = builder->CreateAlloca(arguments[4], nullptr, argument_names[i]);
         builder->CreateStore(&*args, argument_addresses[i]);
         args++; i++;
+        argument_addresses[i] = builder->CreateAlloca(arguments[5], nullptr, argument_names[i]);
+        builder->CreateStore(&*args, argument_addresses[i]);
+        args++; i++;
         assert(args == function->arg_end());
         assert(i == arg_count);
         info.index_addr = argument_addresses[start_addr];
+        info.thread_addr = argument_addresses[thread_nr_addr];
 
         PerformInitialization(info, pipeline->operation);
 

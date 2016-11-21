@@ -105,11 +105,18 @@ ScheduleFunction(JITFunction *jf) {
         i = 0;
         // allocate space for the results (if the space has not yet been allocated) and setup outputs
         for (auto it = jf->pipeline->outputData->objects.begin(); it != jf->pipeline->outputData->objects.end(); it++, i++) {
-            if (it->source->object->storage == NULL) {
-                npy_intp elements[] = { (npy_intp) it->source->size };
-                // FIXME: set to PyArray_EMPTY
-                it->source->object->storage = (PyArrayObject*) PyArray_ZEROS(1, elements, it->source->type, 0);
-                it->source->data = PyArray_DATA(it->source->object->storage);
+            ThunkOperation *thunkop = GetThunkOperation(it->operation);
+            if (thunkop && thunkop->gencode.initialize_data) {
+                // special allocation function
+                thunkop->gencode.initialize_data(it->source, thread_count);
+            } else {
+                // default case, no special allocation function
+                if (it->source->object->storage == NULL) {
+                    npy_intp elements[] = { (npy_intp) it->source->size };
+                    // FIXME: set to PyArray_EMPTY
+                    it->source->object->storage = (PyArrayObject*) PyArray_ZEROS(1, elements, it->source->type, 0);
+                    it->source->data = PyArray_DATA(it->source->object->storage);
+                }
             }
             jf->outputs[i] = it->source->data;
         }
@@ -118,14 +125,6 @@ ScheduleFunction(JITFunction *jf) {
         assert(jf->base);
         thread_count = 1;
     }
-    /*ExecuteTask *task = (ExecuteTask*) malloc(sizeof(ExecuteTask));
-    task->type = tasktype_execute;
-    task->start = 0;
-    task->end = jf->size;
-    task->function = jf;
-    jf->references++;
-    ScheduleTask((Task*) task);
-    */
     jf->output_starts = (ssize_t*) malloc(sizeof(ssize_t) * thread_count);
     jf->output_ends = (ssize_t**) malloc(sizeof(ssize_t*) * jf->pipeline->outputData->objects.size());
     for(int i = 0; i < jf->pipeline->outputData->objects.size(); i++) {

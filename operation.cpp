@@ -7,6 +7,8 @@ ThunkOperation *ThunkOperation_FromUnary(PyObject *arg, operator_type type, void
     op->gencode.type = gentype_unary;
     op->gencode.gencode = gencode_function;
     op->gencode.initialize = NULL;
+    op->gencode.initialize_data = NULL;
+    op->gencode.finalize_data = NULL;
     op->gencode.base = (void*) base;
     op->gencode.parameter[0] = arg;
     op->opname = strdup(opname);
@@ -20,6 +22,8 @@ ThunkOperation *ThunkOperation_FromBinary(PyObject *left, PyObject *right, opera
 	op->gencode.type = gentype_binary;
 	op->gencode.gencode = gencode_function;
     op->gencode.initialize = NULL;
+    op->gencode.initialize_data = NULL;
+    op->gencode.finalize_data = NULL;
     op->gencode.base = (void*) base;
 	op->gencode.parameter[0] = left;
 	op->gencode.parameter[1] = right;

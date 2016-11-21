@@ -87,6 +87,7 @@ public:
 };
 
 
+ThunkOperation *GetThunkOperation(Operation *op);
 Pipeline *ParsePipeline(PyThunkObject *thunk);
 void DestroyPipeline(Pipeline *pipeline);
 
